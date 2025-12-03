@@ -1,0 +1,13 @@
+pandas
+numpy
+scikit-learn
+xgboost
+lightgbm
+ta
+ccxt
+schedule
+optuna
+shap
+torch
+pyarrow
+hmmlearn

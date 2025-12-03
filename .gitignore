@@ -1,0 +1,26 @@
+# Security
+.env
+keys/
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Logs
+*.log
+logs/
+
+# Data (Runtime)
+data/execution/
+data/guardian/
+data/models/*.pkl
+data/features/*.parquet
+data/features/*.csv
+
+# IDE
+.vscode/
+.idea/

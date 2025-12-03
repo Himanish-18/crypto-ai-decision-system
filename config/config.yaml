@@ -1,0 +1,13 @@
+data_path: "./data/"
+symbols: ["BTC/USDT", "ETH/USDT"]
+timeframe: "1h"
+record_limit: 1000
+
+sources:
+  rss:
+    - "https://news.google.com/rss/search?q=bitcoin"
+    - "https://news.google.com/rss/search?q=ethereum"
+  cryptocompare: "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
+  coinstats: "https://api.coinstats.app/public/v1/news/latest?skip=0&limit=50"
+
+logging_level: "INFO"
