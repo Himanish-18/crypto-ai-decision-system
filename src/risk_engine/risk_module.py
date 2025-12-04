@@ -6,13 +6,16 @@ from typing import Dict, Any, Tuple
 logger = logging.getLogger("risk_engine")
 
 class RiskEngine:
-    def __init__(self):
+    def __init__(self, account_size: float = 10000.0):
+        self.capital = account_size
         # Risk Parameters (Go-Live Safe)
         self.max_risk_per_trade = 0.01  # 1% risk per trade
         self.stop_loss_pct = 0.015      # 1.5% Hard Stop
+        self.hard_stop_loss_pct = 0.015 # Alias
         self.trailing_stop_pct = 0.01   # 1% Trailing
         self.take_profit_rr = 2.5       # 2.5R Target
-        self.max_position_size_pct = 0.1 # Max 10% of equity per trade (conservative)
+        self.max_position_size_pct = 0.1 # Max 10% of equity per trade
+        self.max_capital_per_trade_pct = 0.1 # Alias
         self.soft_exit_prob = 0.45
         
     def check_filters(self, market_state: Dict[str, Any]) -> Tuple[bool, str]:
@@ -34,63 +37,65 @@ class RiskEngine:
         
         return True, "OK"
 
-    def calculate_position_size(self, win_rate: float, entry_price: float) -> float:
+    def calculate_position_size(self, win_rate: float, entry_price: float, volatility: float = 0.02) -> float:
         """
-        Calculate position size using Kelly Criterion (bounded).
-        """
-        # Kelly Fraction = W - (1-W)/R
-        # Simplified formula given in prompt: Kelly = win_rate * 2 - 1 (Assuming R=1)
-        # Let's use the prompt's formula but ensure safety.
+        Calculate position size using Volatility Scaling and Kelly Criterion.
         
+        Args:
+            win_rate: Probability of winning.
+            entry_price: Current asset price.
+            volatility: Current asset volatility (e.g., ATR/Price or StdDev). Default 2%.
+        """
+        # 1. Volatility Scaling
+        # Target Risk: 1% of Capital
+        # Position = (Capital * Risk_Pct) / Volatility
+        # This ensures constant dollar risk regardless of volatility.
+        target_risk_amount = self.capital * self.max_risk_per_trade
+        vol_scaled_size_value = target_risk_amount / max(volatility, 0.001) # Avoid div by zero
+        
+        # 2. Kelly Criterion (Bounded)
         kelly_fraction = (win_rate * 2) - 1
+        kelly_size_value = self.capital * max(0, kelly_fraction)
         
-        # Cap Kelly at 0 if negative
-        if kelly_fraction <= 0:
-            return 0.0
-            
-        # Apply Max Capital Constraint (2%)
-        # The prompt says "Max capital per trade = 2%". 
-        # This usually means "Risk 2%" or "Allocate 2%". 
-        # Given "Cap leverage = 1x", allocating only 2% of capital seems very conservative (no leverage).
-        # But "Risk 2%" usually means "Loss limited to 2% of capital".
-        # Let's interpret "Max capital per trade = 2%" as "Max Allocation = 2% of Portfolio" 
-        # OR "Max Risk Amount = 2% of Portfolio".
-        # Given the context of "Kelly Fraction" (which dictates allocation), 
-        # usually Kelly suggests allocation.
-        # However, "Max capital per trade = 2%" strongly suggests Allocation Cap.
-        # Let's assume Max Allocation = 2% (very conservative) OR Max Risk = 2%.
-        # Re-reading: "Max capital per trade = 2%". This likely means Allocation.
-        # But wait, standard Kelly can suggest high allocation.
-        # If I cap allocation at 2%, Kelly is almost useless unless it suggests < 2%.
-        # Let's assume "Risk 2% of capital" is the constraint for the STOP LOSS calculation,
-        # and "Max capital per trade" might be a typo for "Max Risk"?
-        # Let's stick to the previous successful logic: Risk 2% of capital.
-        # Max Risk Amount = Capital * 0.02
-        # Position Size = Max Risk Amount / (Entry * StopLossPct)
+        # 3. Combine (Take Minimum)
+        # We want the size that satisfies BOTH volatility target and Kelly optimality.
+        raw_size_value = min(vol_scaled_size_value, kelly_size_value)
         
-        # But the prompt says: "Kelly Fraction = ...", "Max capital per trade = 2%".
-        # Let's implement: Allocation = Min(Kelly * Capital, 0.02 * Capital).
-        # This effectively caps position size at 2% of account.
+        # 4. Hard Limits
+        max_allowed_value = self.capital * self.max_position_size_pct
+        final_size_value = min(raw_size_value, max_allowed_value)
         
-        allocation_pct = min(kelly_fraction, self.max_capital_per_trade_pct)
-        allocation_amount = self.capital * allocation_pct
-        
-        # Cap leverage = 1x (Implicit since allocation_pct <= 1.0)
-        
-        units = allocation_amount / entry_price
+        units = final_size_value / entry_price
         return units
 
-    def get_exit_params(self, entry_price: float) -> Dict[str, float]:
-        """Return stop loss and take profit levels."""
-        hard_sl = entry_price * (1 - self.hard_stop_loss_pct)
-        # TP not explicitly defined in prompt "Computed from RR ratio"
-        # Let's assume RR = 2.0 or 2.5 from previous step
+    def check_var_limit(self, current_portfolio_value: float, current_volatility: float, confidence_level: float = 0.95) -> bool:
+        """
+        Check if Portfolio VaR is within limits.
+        VaR = Portfolio_Value * Z_Score * Volatility
+        """
+        z_score = 1.65 # 95% Confidence
+        var = current_portfolio_value * z_score * current_volatility
+        
+        max_var = self.capital * 0.05 # Max 5% VaR
+        
+        if var > max_var:
+            logger.warning(f"⚠️ VaR Breach! Current: ${var:.2f}, Max: ${max_var:.2f}")
+            return False
+        return True
+
+    def get_exit_params(self, entry_price: float, volatility: float = 0.015) -> Dict[str, float]:
+        """Return stop loss and take profit levels based on volatility."""
+        # Dynamic SL based on Volatility (e.g., 2 * Volatility)
+        sl_dist = entry_price * (2 * volatility)
+        hard_sl = entry_price - sl_dist
+        
+        # TP based on RR
         rr_ratio = 2.5
-        tp = entry_price * (1 + (self.hard_stop_loss_pct * rr_ratio))
+        tp = entry_price + (sl_dist * rr_ratio)
         
         return {
             "stop_loss": hard_sl,
             "take_profit": tp,
-            "trailing_stop_pct": self.trailing_stop_pct,
+            "trailing_stop_pct": volatility, # Trail by 1 vol unit
             "soft_exit_prob": self.soft_exit_prob
         }

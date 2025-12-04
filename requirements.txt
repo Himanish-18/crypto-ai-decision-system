@@ -11,3 +11,6 @@ shap
 torch
 pyarrow
 hmmlearn
+seaborn
+jupyter
+ipykernel

@@ -12,12 +12,23 @@ st.title("🤖 Crypto AI Trading Bot Dashboard")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 LOG_FILE = DATA_DIR / "execution" / "logs" / "trading_log.jsonl"
+PAPER_LOG = DATA_DIR / "execution" / "paper_trades.jsonl"
 GUARDIAN_STATE = DATA_DIR / "guardian" / "state.json"
+ANALYTICS_DIR = DATA_DIR / "analytics"
+RESEARCH_DIR = DATA_DIR / "research"
+
+PERF_METRICS = ANALYTICS_DIR / "performance_metrics.csv"
+PERF_CHARTS = ANALYTICS_DIR / "performance_charts.png"
+DRIFT_REPORT = ANALYTICS_DIR / "drift_report.csv"
+RL_RESULTS = RESEARCH_DIR / "rl_results.csv"
 
 # Load Data
 @st.cache_data(ttl=60)
 def load_logs():
-    if not LOG_FILE.exists():
+    # Fallback to paper logs if main log empty
+    target_log = LOG_FILE if LOG_FILE.exists() and LOG_FILE.stat().st_size > 0 else PAPER_LOG
+    
+    if not target_log.exists():
         return pd.DataFrame()
     
     data = []
@@ -112,6 +123,55 @@ if not df.empty:
 
 else:
     st.info("No trading logs found yet.")
+
+# --- NEW PANELS ---
+
+# 1. Performance Analytics
+st.markdown("---")
+st.header("📊 Performance Analytics")
+col_p1, col_p2 = st.columns([1, 2])
+
+with col_p1:
+    if PERF_METRICS.exists():
+        st.subheader("Key Metrics")
+        metrics_df = pd.read_csv(PERF_METRICS)
+        st.dataframe(metrics_df.T)
+    else:
+        st.info("No performance metrics yet.")
+
+with col_p2:
+    if PERF_CHARTS.exists():
+        st.subheader("Equity & Drawdown")
+        st.image(str(PERF_CHARTS))
+    else:
+        st.info("No performance charts yet.")
+
+# 2. Live Drift Detection
+st.markdown("---")
+st.header("⚠️ Live Drift Detection")
+if DRIFT_REPORT.exists():
+    drift_df = pd.read_csv(DRIFT_REPORT)
+    critical_drift = drift_df[drift_df["status"] == "CRITICAL"]
+    
+    if not critical_drift.empty:
+        st.error(f"🚨 CRITICAL DRIFT DETECTED in {len(critical_drift)} features!")
+        st.dataframe(critical_drift)
+    else:
+        st.success("✅ No critical drift detected.")
+        with st.expander("View Full Drift Report"):
+            st.dataframe(drift_df)
+else:
+    st.info("No drift report available.")
+
+# 3. RL Simulation Results
+st.markdown("---")
+st.header("🤖 RL Agent Simulation")
+if RL_RESULTS.exists():
+    rl_df = pd.read_csv(RL_RESULTS)
+    st.line_chart(rl_df["equity"])
+    st.caption("RL Agent Equity Curve (Simulation)")
+else:
+    st.info("No RL simulation results yet.")
 
 if st.button("Refresh"):
     st.rerun()

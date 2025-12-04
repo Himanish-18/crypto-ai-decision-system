@@ -13,7 +13,9 @@ from src.execution.trading_decision import TradingDecision
 from src.execution.binance_executor import BinanceExecutor
 from src.execution.executor_queue import ExecutorQueue
 from src.guardian.safety_daemon import SafetyDaemon
+from src.monitor.data_drift import DriftDetector
 from src.features.build_features import add_ta_indicators, add_rolling_features, add_lagged_features, engineer_sentiment
+from src.utils.alerting import TelegramAlertHandler
 
 # Setup Logging
 logging.basicConfig(
@@ -21,7 +23,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("live_trading.log"),
-        logging.StreamHandler()
+        logging.StreamHandler(),
+        TelegramAlertHandler() # Add Telegram Handler
     ]
 )
 logger = logging.getLogger("live_loop")
@@ -63,6 +66,13 @@ class LiveBotService:
         self.executor_queue.start()
         
         self.guardian = SafetyDaemon(DATA_DIR, initial_capital=10000.0)
+        
+        # Initialize Drift Detector
+        self.drift_detector = DriftDetector()
+        try:
+            self.drift_detector.load_reference()
+        except Exception as e:
+            logger.error(f"Failed to load drift reference: {e}")
         
         # Initialize last trade ID
         recent_trades = self.executor.get_recent_trades(limit=1)
@@ -122,6 +132,25 @@ class LiveBotService:
                 logger.critical("🛑 Guardian: System Health Check Failed. Aborting Cycle.")
                 return
             
+            # --- DRIFT CHECK (Daily) ---
+            # Check drift if it's 00:00 UTC (approx) or just check every cycle if fast enough
+            # For robustness, let's check if hour == 0
+            current_hour = pd.Timestamp.utcnow().hour
+            if current_hour == 0 and self.drift_detector.reference_data is not None:
+                logger.info("🔍 Running Daily Drift Check...")
+                # Use last 24h of data (approx 24 rows)
+                recent_data = df.iloc[-24:]
+                drift_report = self.drift_detector.check_drift(recent_data)
+                
+                if not drift_report.empty:
+                    critical_drift = drift_report[drift_report["status"] == "CRITICAL"]
+                    if not critical_drift.empty:
+                        logger.critical(f"🚨 CRITICAL DATA DRIFT DETECTED in {len(critical_drift)} features. PAUSING TRADING.")
+                        self.guardian.state["is_locked"] = True
+                        self.guardian.state["lock_reason"] = "Critical Data Drift Detected"
+                        self.guardian._save_state()
+                        return
+
             # 3. Get Latest Closed Candle
             latest_candle = df.iloc[[-2]].copy().reset_index(drop=True)
             current_price = latest_candle["btc_close"].iloc[0]

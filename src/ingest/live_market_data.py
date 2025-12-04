@@ -12,6 +12,7 @@ class LiveMarketData:
         self.timeframe = timeframe
         self.exchange = getattr(ccxt, exchange_id)({
             'enableRateLimit': True,
+            'options': {'defaultType': 'future'} # Use futures for funding rates etc if needed
         })
         
     def fetch_candles(self, limit: int = 1000) -> Optional[pd.DataFrame]:
@@ -24,18 +25,6 @@ class LiveMarketData:
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
             
-            # CCXT usually returns open candle as last.
-            # We want to process the *last closed* candle for decision, 
-            # but we need history for features.
-            # We will return all fetched candles. 
-            # The orchestrator will decide which one is the "target" candle (usually iloc[-2] if open is present).
-            
-            # For simplicity, let's just return what we get.
-            # But we need to be careful about column names matching build_features.py
-            # build_features expects: btc_close, btc_high, etc.
-            # We are fetching BTC/USDT, so we should rename cols.
-            
-            # Assuming symbol is BTC/USDT
             prefix = "btc" if "BTC" in self.symbol else "eth"
             df.columns = ["timestamp"] + [f"{prefix}_{c}" for c in ["open", "high", "low", "close", "volume"]]
             
@@ -57,8 +46,6 @@ class LiveMarketData:
             # Return the second to last candle (latest closed)
             latest_closed = df.iloc[[-2]].copy().reset_index(drop=True)
             
-            # Rename back for logging if needed, or keep as is.
-            # The logging below expects 'close', but we renamed to 'btc_close'
             prefix = "btc" if "BTC" in self.symbol else "eth"
             close_col = f"{prefix}_close"
             
@@ -77,3 +64,32 @@ class LiveMarketData:
         except Exception as e:
             logger.error(f"Error fetching ticker: {e}")
             return 0.0
+
+    def fetch_order_book(self, limit: int = 100) -> Optional[Dict[str, Any]]:
+        """
+        Fetch Level 2 Order Book (Bids/Asks).
+        """
+        try:
+            order_book = self.exchange.fetch_order_book(self.symbol, limit=limit)
+            return {
+                'timestamp': order_book['timestamp'],
+                'bids': order_book['bids'], # [[price, amount], ...]
+                'asks': order_book['asks']
+            }
+        except Exception as e:
+            logger.error(f"Error fetching order book: {e}")
+            return None
+
+    def fetch_recent_trades(self, limit: int = 100) -> Optional[pd.DataFrame]:
+        """
+        Fetch recent trades for CVD calculation.
+        """
+        try:
+            trades = self.exchange.fetch_trades(self.symbol, limit=limit)
+            df = pd.DataFrame(trades)
+            # Keep relevant columns
+            df = df[['timestamp', 'side', 'price', 'amount', 'cost']]
+            return df
+        except Exception as e:
+            logger.error(f"Error fetching recent trades: {e}")
+            return None

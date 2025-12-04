@@ -1,0 +1,7 @@
+{
+    "model_hash": "c8fc3b4a89e8c54eac5c5c25a9d988e7ae3ab83cc8af2f9c0b73471c600f5a51",
+    "training_data_hash": "d50414bb54fba0f72b1b44c9fd588aebdb9e07819174ec1718e832065e3b1d20",
+    "audit_timestamp": "2025-12-04T03:15:29.360514",
+    "top_drift_feature": "eth_ret",
+    "top_drift_psi": 10.70392436539604
+}
