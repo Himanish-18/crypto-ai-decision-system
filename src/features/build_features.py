@@ -9,8 +9,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 CLEAN_FILE = DATA_DIR / "features" / "features_ml_1H.csv"
 FEATURES_DIR = DATA_DIR / "features"
-OUTPUT_CSV = FEATURES_DIR / "features_1H_advanced.csv"
-OUTPUT_PARQUET = FEATURES_DIR / "features_1H_advanced.parquet"
+OUTPUT_CSV = FEATURES_DIR / "features_1H_mega_alpha.csv"
+OUTPUT_PARQUET = FEATURES_DIR / "features_1H_mega_alpha.parquet"
 
 def load_data() -> pd.DataFrame:
     """Load cleaned time series data."""
@@ -29,6 +29,9 @@ def add_ta_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     
     for symbol in ["btc", "eth"]:
+        if f"{symbol}_close" not in df.columns:
+            continue
+            
         close = df[f"{symbol}_close"]
         high = df[f"{symbol}_high"]
         low = df[f"{symbol}_low"]
@@ -62,6 +65,9 @@ def add_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
     windows = [5, 10, 20, 50]
     
     for symbol in ["btc", "eth"]:
+        if f"{symbol}_close" not in df.columns:
+            continue
+            
         close = df[f"{symbol}_close"]
         
         for w in windows:
@@ -90,6 +96,9 @@ def add_lagged_features(df: pd.DataFrame) -> pd.DataFrame:
     # Features to lag
     cols_to_lag = []
     for symbol in ["btc", "eth"]:
+        if f"{symbol}_close" not in df.columns:
+            continue
+            
         cols_to_lag.extend([
             f"{symbol}_close", 
             f"{symbol}_volume", 
@@ -101,6 +110,9 @@ def add_lagged_features(df: pd.DataFrame) -> pd.DataFrame:
     # Also lag returns if they exist (calculated in previous step or here)
     # Let's calculate returns here first to be safe
     for symbol in ["btc", "eth"]:
+        if f"{symbol}_close" not in df.columns:
+            continue
+            
         df[f"{symbol}_ret"] = np.log(df[f"{symbol}_close"] / df[f"{symbol}_close"].shift(1))
         cols_to_lag.append(f"{symbol}_ret")
 
@@ -114,47 +126,47 @@ def add_lagged_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def engineer_sentiment(df: pd.DataFrame) -> pd.DataFrame:
-    """Engineer Sentiment Features."""
+    """Engineer Sentiment Features (Upgraded)."""
     print("🧠 Engineering Sentiment...")
     df = df.copy()
     
-    # Fill missing sentiment with 0
+    # Fill missing
     df["sentiment_mean"] = df["sentiment_mean"].fillna(0)
     df["sentiment_count"] = df["sentiment_count"].fillna(0)
     
-    # Rolling 24h features (assuming 1H data, window=24)
-    df["sentiment_roll_mean_24h"] = df["sentiment_mean"].rolling(window=24).mean()
+    # Base Rolling features
+    windows = [24, 72]
     
-    # Weighted mean proxy: sum(mean * count) / sum(count) over window
-    # We can approximate or just do rolling mean of (mean * count)
-    # Let's do a simple rolling weighted average if possible, or just rolling sum of counts
+    for w in windows:
+        # Simple rolling mean
+        df[f"sentiment_roll_mean_{w}h"] = df["sentiment_mean"].rolling(window=w).mean()
+        
+        # Weighted Mean proxy: Sum(mean*count) / Sum(count)
+        # Total mass of sentiment "volume"
+        sent_mass = (df["sentiment_mean"] * df["sentiment_count"]).rolling(window=w).sum()
+        count_sum = df["sentiment_count"].rolling(window=w).sum()
+        df[f"sentiment_roll_wmean_{w}h"] = sent_mass / (count_sum + 1e-9)
+        
+    # Shock Flags (Z-Score > 2)
+    # Using 24h rolling stats for baseline
+    roll_mean = df["sentiment_mean"].rolling(24).mean()
+    roll_std = df["sentiment_mean"].rolling(24).std()
+    z_score = (df["sentiment_mean"] - roll_mean) / (roll_std + 1e-9)
+    df["sentiment_shock"] = (z_score.abs() > 2).astype(int)
     
-    # Rolling sum of counts
-    roll_count_sum = df["sentiment_count"].rolling(window=24).sum()
+    # Sentiment-Price Divergence
+    # Price Trend (24h) vs Sentiment Trend (24h)
+    # Divergence = Price Up & Sentiment Down (Bearish), or Price Down & Sentiment Up (Bullish)
+    price_change = df["btc_close"].pct_change(24)
+    sent_change = df["sentiment_roll_wmean_24h"].diff(24)
     
-    # Rolling sum of (mean * count) -> total sentiment score mass
-    total_sent_mass = (df["sentiment_mean"] * df["sentiment_count"]).rolling(window=24).sum()
-    
-    df["sentiment_roll_wmean_24h"] = total_sent_mass / (roll_count_sum + 1e-9)
-    
-    # Shock flag: if current sentiment mean abs > 0.5 (arbitrary threshold)
-    df["sentiment_shock"] = (df["sentiment_mean"].abs() > 0.5).astype(int)
+    # 1 if Bullish Div, -1 if Bearish Div, 0 otherwise
+    df["sentiment_divergence"] = np.where(
+        (price_change < 0) & (sent_change > 0), 1,
+        np.where((price_change > 0) & (sent_change < 0), -1, 0)
+    )
     
     return df
-
-def export(df: pd.DataFrame) -> None:
-    """Export final dataset."""
-    # Drop rows with NaNs created by rolling/lagging
-    # We want a clean ML dataset
-    original_len = len(df)
-    df = df.dropna()
-    print(f"🧹 Dropped {original_len - len(df)} rows due to NaNs (rolling/lags).")
-    
-    print(f"💾 Saving to {OUTPUT_CSV} and {OUTPUT_PARQUET}...")
-    FEATURES_DIR.mkdir(parents=True, exist_ok=True)
-    df.to_csv(OUTPUT_CSV, index=False)
-    df.to_parquet(OUTPUT_PARQUET, index=False)
-    print("✅ Done.")
 
 def main():
     try:
@@ -169,11 +181,76 @@ def main():
         # 3. Lagged Features
         df = add_lagged_features(df)
         
-        # 4. Sentiment
+        # 4. Sentiment (Upgraded)
         df = engineer_sentiment(df)
+
+        # 5. Advanced Alpha Signals (New - Expanded)
+        from src.features.alpha_signals import AlphaSignals
+        alpha_signals = AlphaSignals()
+        df = alpha_signals.compute_all(df, symbol="btc")
+        if "eth_close" in df.columns:
+             df = alpha_signals.compute_all(df, symbol="eth")
+
+        # 6. Order Flow Features (New)
+        print("🌊 Calculating Order Flow & Microstructure features...")
+        from src.features.orderflow_features import OrderFlowFeatures
+        of_feats = OrderFlowFeatures()
+        df = of_feats.compute_all(df, symbol="btc")
+        if "eth_close" in df.columns:
+             df = of_feats.compute_all(df, symbol="eth")
+
+        # 7. Order Book Features (From Parquet)
+        ob_path = FEATURES_DIR / "orderbook_features.parquet"
+        if ob_path.exists():
+             print(f"📖 Merging OrderBook Features from {ob_path}...")
+             df_ob = pd.read_parquet(ob_path)
+             df_ob["timestamp"] = pd.to_datetime(df_ob["timestamp"], utc=True)
+             df_ob = df_ob.sort_values("timestamp")
+             
+             df = pd.merge_asof(
+                 df.sort_values("timestamp"),
+                 df_ob.sort_values("timestamp"),
+                 on="timestamp",
+                 direction="backward",
+                 tolerance=pd.Timedelta("3h") 
+             )
+             # Note: merge_asof output might have NaNs if out of tolerance.
+             # OB data is likely sparse/new compared to historical candles.
+             # FILL NaNs to preserve candle history!
+             for col in df_ob.columns:
+                 if col != "timestamp":
+                     df[col] = df[col].fillna(0) # or ffill? 0 is safer for "No Info"
+        else:
+             print("⚠️ OrderBook Features not found. Creating placeholders.")
+             for col in ["spread_pct", "obi", "impact_cost", "liquidity_ratio"]:
+                 df[col] = 0.0 # Use 0.0 instead of NaN to avoid dropna later
+
+        # We need to fill NaNs first before fitting regime model?
+        # RegimeFilter handles internal fitting.
+        # Check for NaNs/Infs
+        df = df.replace([np.inf, -np.inf], np.nan)
+        df_clean_for_regime = df.dropna()
         
-        # 5. Export
-        export(df)
+        if not df_clean_for_regime.empty:
+            from src.risk_engine.regime_filter import RegimeFilter
+            regime_filter = RegimeFilter()
+            # This saves 'regime_labels.parquet' internally
+            regime_filter.fit_predict_and_save(df_clean_for_regime, symbol="btc")
+        
+        # 8. Export
+        # Update output path for this specific request
+        OUTPUT_ALPHA = FEATURES_DIR / "alpha_features.parquet"
+        
+        # Clean final DF
+        df = df.replace([np.inf, -np.inf], np.nan).dropna()
+        
+        print(f"💾 Saving to {OUTPUT_ALPHA}...")
+        df.to_parquet(OUTPUT_ALPHA, index=False)
+        
+        # Also save to legacy paths for compatibility
+        df.to_csv(OUTPUT_CSV, index=False)
+        df.to_parquet(OUTPUT_PARQUET, index=False)
+        print("✅ Done.")
         
     except Exception as e:
         print(f"❌ Error: {e}")

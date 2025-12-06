@@ -23,24 +23,76 @@ class SmartExecutor:
         self.max_wait_time = 10 # Seconds to wait for fill
         self.replace_threshold = 0.0005 # 5 bps price move triggers replace
         
-    async def execute_order(self, symbol: str, side: str, amount: float, price: Optional[float] = None, style: str = "PASSIVE"):
+    async def execute_order(self, symbol: str, side: str, amount: float, price: Optional[float] = None, style: str = "AUTO", microstructure: Optional[Dict] = None, stops: Optional[Dict] = None):
         """
-        Execute an order with the specified style.
+        Execute an order with smart routing based on microstructure.
         
         Args:
-            symbol: Trading pair (e.g., "BTC/USDT").
+            symbol: Trading pair.
             side: "buy" or "sell".
-            amount: Quantity to trade.
-            price: Limit price (optional). If None, uses current best bid/ask.
-            style: "PASSIVE" (Maker) or "AGGRESSIVE" (Taker).
+            amount: Quantity.
+            style: "AUTO" (Decide based on OB), "PASSIVE", "AGGRESSIVE".
+            microstructure: Dict containing 'obi', 'spread_pct', 'impact_cost'.
         """
+        # 1. Microstructure Safety Checks
+        if microstructure:
+            impact_cost = microstructure.get("impact_cost", 0)
+            if impact_cost > 0.0015: # 0.15%
+                logger.warning(f"🛑 High Impact Cost ({impact_cost*100:.3f}%). Aborting Trade.")
+                return None
+                
+            liq_ratio = microstructure.get("liquidity_ratio", 1.0)
+            if side == "buy" and liq_ratio < 0.2: # Thin asks? No, thin bids
+                 # Liquidity Ratio defined as Bids/Asks. 
+                 # If buying, we consume Asks. 
+                 # If Ratio is Low < 0.2, it means Bids << Asks. 
+                 # Actually, if we Buy, we care about Asks (Sell Liquidity).
+                 # If Ratio is HIGH check?
+                 # Let's stick to simple "Thin Liquidity" check
+                 # If total liquidity is strangely low contextually...
+                 pass 
+                 
+            # Adjust Size based on Liquidity?
+            if liq_ratio < 0.2:
+                 logger.info("⚠️ Thin Liquidity. Reducing size by 50%.")
+                 amount = amount * 0.5
+
+        # 2. Determine Style
+        if style == "AUTO" and microstructure:
+            obi = microstructure.get("obi", 0)
+            spread = microstructure.get("spread_pct", 0)
+            
+            # Logic:
+            # Strong Buy Pressure (OBI > 0.55) -> Taker (Don't miss the move)
+            if side == "buy" and obi > 0.55:
+                style = "AGGRESSIVE"
+                logger.info(f"⚡ Strong OBI ({obi:.2f}). Going AGGRESSIVE.")
+            elif side == "sell" and obi < -0.55:
+                style = "AGGRESSIVE" # Sell pressure
+                logger.info(f"⚡ Strong OBI ({obi:.2f}). Going AGGRESSIVE.")
+            
+            # Wide Spread -> Passive (Capture spread)
+            elif spread > 0.0009: # 0.09% ~ 9 bps
+                style = "PASSIVE"
+                logger.info(f"🐢 Wide Spread ({spread*100:.3f}%). Going PASSIVE.")
+            else:
+                style = "PASSIVE" # Default to Passive execution
+        elif style == "AUTO":
+             style = "PASSIVE" # Default
+
         logger.info(f"🚀 Executing {style} {side.upper()} {amount} {symbol}")
         
         if style == "AGGRESSIVE":
-            return self.executor.place_order(symbol, side, amount, order_type="market")
+            # Pass stops if available
+            params = {}
+            if stops:
+                # CCXT Unified params or custom handling in BinanceExecutor
+                params["stops"] = stops
+                
+            return self.executor.place_order(symbol, side, amount, order_type="market", params=params)
             
         elif style == "PASSIVE":
-            return await self._execute_passive(symbol, side, amount, price)
+            return await self._execute_passive(symbol, side, amount, price) # Passive ignores stops for now
             
         else:
             raise ValueError(f"Unknown execution style: {style}")

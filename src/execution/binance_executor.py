@@ -16,7 +16,7 @@ class BinanceExecutor:
         self.testnet = os.getenv("GO_LIVE", "false").lower() != "true"
         
         if not self.api_key or not self.secret_key:
-            logger.warning("⚠️ API Keys not found. Executor will run in DRY-RUN mode.")
+            logger.info("ℹ️ Running in Simulation Mode (No API Keys provided).")
             self.exchange = None
         else:
             self.exchange = ccxt.binance({
@@ -84,7 +84,7 @@ class BinanceExecutor:
             logger.error(f"Error fetching trades: {e}")
             return []
 
-    def execute_order(self, symbol: str, side: str, amount: float, order_type: str = "market", params: Dict = {}) -> Optional[Dict]:
+    def execute_order(self, symbol: str, side: str, amount: float, order_type: str = "market", price: Optional[float] = None, params: Dict = {}, kwargs: Dict = {}) -> Optional[Dict]:
         """
         Execute an order.
         side: 'buy' or 'sell'
@@ -95,8 +95,34 @@ class BinanceExecutor:
             
         try:
             logger.info(f"🚀 Executing {side.upper()} {amount} {symbol}...")
-            order = self.exchange.create_order(symbol, order_type, side, amount, params=params)
+            
+            # Extract stops to handle separately if needed
+            stops = params.pop("stops", None)
+            
+            # Handle Price (either arg or kwargs)
+            if price is None and "price" in kwargs:
+                price = kwargs["price"]
+            
+            order = self.exchange.create_order(symbol, order_type, side, amount, price, params=params)
             logger.info(f"Order Placed: {order['id']} | Status: {order['status']}")
+            
+            # Handle Stops
+            if stops and order.get('status') in ['open', 'closed']:
+                sl = stops.get("stop_loss")
+                tp = stops.get("take_profit")
+                
+                if sl:
+                    # Place Stop Market
+                    sl_side = "sell" if side == "buy" else "buy"
+                    try:
+                        sl_order = self.exchange.create_order(
+                            symbol, "STOP_MARKET", sl_side, amount, 
+                            params={"stopPrice": sl, "closePosition": True} # ReduceOnly
+                        )
+                        logger.info(f"🛑 Stop Loss Placed at {sl}")
+                    except Exception as e_sl:
+                        logger.error(f"Failed to place SL: {e_sl}")
+
             return order
         except Exception as e:
             logger.error(f"Error executing order: {e}")

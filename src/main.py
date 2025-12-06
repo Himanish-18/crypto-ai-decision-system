@@ -6,12 +6,16 @@ from pathlib import Path
 from datetime import datetime
 import pytz
 
-from src.ingest.live_market_data import LiveMarketData
-from src.execution.live_signal_engine import LiveSignalEngine
-from src.risk_engine.risk_module import RiskEngine
 from src.execution.trading_decision import TradingDecision
 from src.execution.binance_executor import BinanceExecutor
+from src.execution.smart_executor import SmartExecutor
+from src.features.orderbook_features import OrderBookManager
 from src.guardian.safety_daemon import SafetyDaemon
+from src.data.market_router import MarketRouter
+from src.execution.live_signal_engine import LiveSignalEngine
+from src.risk_engine.risk_module import RiskEngine
+import threading
+import asyncio
 from src.features.build_features import add_ta_indicators, add_rolling_features, add_lagged_features, engineer_sentiment
 
 # Setup Logging
@@ -29,8 +33,8 @@ logger = logging.getLogger("main")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 MODELS_DIR = DATA_DIR / "models"
-MODEL_PATH = MODELS_DIR / "model_xgb_v1.pkl"
-SCALER_PATH = MODELS_DIR / "scaler_v1.pkl"
+MODEL_PATH = MODELS_DIR / "multifactor_model.pkl" # Updated to new Regime Model
+SCALER_PATH = MODELS_DIR / "scaler.pkl" # Updated/Dummy scaler path
 LOG_DIR = DATA_DIR / "execution" / "logs"
 
 def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -49,7 +53,7 @@ def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
     # 3. Lagged Features
     df = add_lagged_features(df)
     
-    # 4. Sentiment
+    # 4. Sentiment (Upgraded)
     df = engineer_sentiment(df)
     
     return df
@@ -59,28 +63,31 @@ def job():
     
     try:
         # 1. Fetch Data (History for features)
+        # Using v8 MarketRouter (Unified 1m Candles)
         # Fetch BTC
-        df_btc = market_data_btc.fetch_candles(limit=1000)
+        df_btc = asyncio.run(market_router.fetch_unified_candles("BTC/USDT", timeframe="1m", limit=1000))
         if df_btc is None or len(df_btc) < 100:
-            logger.warning("Insufficient BTC data. Skipping cycle.")
+            logger.warning("Insufficient BTC data (MarketRouter). Skipping cycle.")
             return
 
-        # Fetch ETH
-        df_eth = market_data_eth.fetch_candles(limit=1000)
-        if df_eth is None or len(df_eth) < 100:
-            logger.warning("Insufficient ETH data. Skipping cycle.")
-            return
-            
-        # Merge on timestamp
-        df = pd.merge(df_btc, df_eth, on="timestamp", how="inner")
+        # Fetch ETH (Optional/Future use) - Commented out for speed unless needed
+        # df_eth = asyncio.run(market_router.fetch_unified_candles("ETH/USDT", timeframe="1m", limit=1000))
+        
+        # Use BTC df
+        df = df_btc
         
         if len(df) < 100:
-             logger.warning("Insufficient merged data. Skipping cycle.")
+             logger.warning("Insufficient data. Skipping cycle.")
              return
 
-        # 2. Calculate Features
+        # 2. Calculate Basic Features
         df = calculate_features(df)
         
+        # NOTE: Advanced Features (Alphas, OrderFlow) are now handled internally by LiveSignalEngine
+        # to ensure consistency with Training Loop.
+            
+        # --- GUARDIAN CHECK 1: System Health ---
+            
         # --- GUARDIAN CHECK 1: System Health ---
         if not guardian.check_system_health(signal_engine.model, signal_engine.scaler, df):
             logger.critical("🛑 Guardian: System Health Check Failed. Aborting Cycle.")
@@ -94,7 +101,7 @@ def job():
         logger.info(f"Processing Candle: {timestamp} | Price: {current_price}")
         
         # --- GUARDIAN CHECK 2: Financial Health ---
-        current_balance = executor.get_balance("USDT")
+        current_balance = base_executor.get_balance("USDT")
         if not guardian.check_financial_health(current_balance):
             logger.critical("🛑 Guardian: Financial Health Check Failed. Aborting Cycle.")
             return
@@ -121,13 +128,23 @@ def job():
                     logger.warning("🛑 Guardian: Execution Safety Check Failed. Holding.")
                     return
                     
-                # Execute Buy
-                order = executor.execute_order(
-                    symbol="BTC/USDT", 
-                    side="buy", 
-                    amount=decision["size"], 
-                    order_type="market"
-                )
+                # Get Microstructure Metrics
+                ob_metrics = ob_manager.get_latest_metrics()
+                
+                # Execute Buy (Smart)
+                # Ensure we run async method in sync context
+                try:
+                    order = asyncio.run(smart_executor.execute_order(
+                        symbol="BTC/USDT",
+                        side="buy",
+                        amount=decision["size"],
+                        style="AUTO",
+                        microstructure=ob_metrics,
+                        stops=decision["stops"]
+                    ))
+                except Exception as ex_err:
+                    logger.error(f"Execution Error: {ex_err}")
+                    order = None
                 
                 if order:
                     logger.info(f"✅ BUY Order Executed: {order}")
@@ -149,13 +166,26 @@ if __name__ == "__main__":
     logger.info("🚀 Live Trading Bot Started")
     
     # Initialize Components
-    market_data_btc = LiveMarketData(symbol="BTC/USDT", timeframe="1h")
-    market_data_eth = LiveMarketData(symbol="ETH/USDT", timeframe="1h")
+    # v8 Market Router
+    market_router = MarketRouter(primary_exchange="binance", secondary_exchanges=["bybit", "okx"])
+    logger.info("✅ MarketRouter Initialized")
     
-    signal_engine = LiveSignalEngine(MODEL_PATH, SCALER_PATH)
+    signal_engine = LiveSignalEngine(MODEL_PATH, SCALER_PATH, balanced_mode=True)
     risk_engine = RiskEngine() 
     decision_engine = TradingDecision(risk_engine, LOG_DIR)
-    executor = BinanceExecutor(testnet=True) 
+    
+    # Execution Stack
+    base_executor = BinanceExecutor() # Configured via env vars (Defaults to Dry Run if missing)
+    smart_executor = SmartExecutor(base_executor)
+    
+    # Order Book Manager (Async in Thread)
+    ob_manager = OrderBookManager(symbol="btcusdt")
+    def run_ob_loop():
+        asyncio.run(ob_manager.start_stream())
+    
+    ob_thread = threading.Thread(target=run_ob_loop, daemon=True)
+    ob_thread.start()
+    logger.info("📡 OrderBook Manager Thread Started")
     
     # Initialize Guardian
     guardian = SafetyDaemon(DATA_DIR, initial_capital=10000.0) # Set initial capital correctly!
@@ -163,8 +193,8 @@ if __name__ == "__main__":
     # Run once immediately to verify
     job()
     
-    # Schedule every hour at minute 02 (to ensure candle closed and data available)
-    schedule.every().hour.at(":02").do(job)
+    # Schedule every minute (since we are on 1m timeframe now)
+    schedule.every().minute.at(":02").do(job)
     
     while True:
         schedule.run_pending()

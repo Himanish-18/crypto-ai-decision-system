@@ -106,6 +106,33 @@ class DriftDetector:
                 
         return pd.DataFrame(results)
 
+    def check_regime_shift(self, live_data: pd.DataFrame) -> Dict[str, Any]:
+        """Check if regime distribution has shifted significantly."""
+        if "regime" not in live_data.columns:
+            return {}
+            
+        # Expected distribution (Approx from training or assumed)
+        # Normal: 60%, HighVol: 20%, LowLiq: 10%, Macro: 10%
+        # This is a heuristic check.
+        
+        counts = live_data["regime"].value_counts(normalize=True)
+        
+        alerts = []
+        if counts.get("High Volatility", 0) > 0.40:
+            alerts.append("High Volatility Dominance (>40%)")
+        
+        if counts.get("Low Liquidity", 0) > 0.30:
+            alerts.append("Liquidity Crisis (>30%)")
+            
+        if counts.get("Macro Event", 0) > 0.15:
+            alerts.append("Frequent Macro Shocks (>15%)")
+            
+        if alerts:
+            logger.warning(f"🚨 REGIME SHIFT DETECTED: {', '.join(alerts)}")
+            return {"status": "DRIFT", "alerts": alerts}
+            
+        return {"status": "OK"}
+
 def main():
     detector = DriftDetector()
     detector.load_reference()
@@ -132,7 +159,20 @@ def main():
             drift_report.to_csv(DRIFT_REPORT_FILE, index=False)
             logger.info(f"Report saved to {DRIFT_REPORT_FILE}")
         else:
-            logger.info("No drift calculated.")
+            logger.info("No feature drift calculated.")
+
+        # Check Regime Drift (Simulated)
+        if "regime" not in live_data.columns:
+            # Add dummy regime for testing
+            live_data["regime"] = np.random.choice(["Normal", "High Volatility"], size=len(live_data), p=[0.5, 0.5])
+            
+        regime_status = detector.check_regime_shift(live_data)
+        if regime_status.get("status") == "DRIFT":
+            print("\n" + "="*30)
+            print(" 🚨 REGIME ALERT ")
+            print("="*30)
+            print(f"Alerts: {regime_status['alerts']}")
+            print("="*30 + "\n")
 
 if __name__ == "__main__":
     main()

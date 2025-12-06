@@ -1,0 +1,102 @@
+{
+    "data_stress": {
+        "High Volatility": {
+            "auc": 0.5,
+            "precision": 0,
+            "recall": 0,
+            "f1": 0,
+            "count": 2648
+        },
+        "Low Liquidity": {
+            "auc": 0.5,
+            "precision": 0,
+            "recall": 0,
+            "f1": 0,
+            "count": 7943
+        },
+        "Macro Events": {
+            "auc": 0.5,
+            "precision": 0,
+            "recall": 0,
+            "f1": 0,
+            "count": 81
+        }
+    },
+    "strategy_stress": {
+        "Base Case": {
+            "initial_capital": 10000.0,
+            "final_capital": 12114.984989212653,
+            "total_return_pct": 21.149849892126532,
+            "cagr_pct": 19.83568953726671,
+            "max_drawdown_pct": -4.242744887774981,
+            "sortino_ratio": 1.068975452445878,
+            "profit_factor": 2.526406205480595,
+            "win_rate_pct": 52.38095238095239,
+            "total_trades": 42,
+            "avg_win_usd": 159.11739679956887,
+            "avg_loss_usd": -69.27988701889299,
+            "roi_after_fees_pct": 21.149849892126532
+        },
+        "2x Slippage": {
+            "initial_capital": 10000.0,
+            "final_capital": 11639.583435567587,
+            "total_return_pct": 16.39583435567587,
+            "cagr_pct": 15.395548640356814,
+            "max_drawdown_pct": -5.003204120879089,
+            "sortino_ratio": 0.8341095837532941,
+            "profit_factor": 2.029491668160611,
+            "win_rate_pct": 40.476190476190474,
+            "total_trades": 42,
+            "avg_win_usd": 190.129294740067,
+            "avg_loss_usd": -63.704583000541746,
+            "roi_after_fees_pct": 16.39583435567587
+        },
+        "3x Fees": {
+            "initial_capital": 10000.0,
+            "final_capital": 10680.714602636963,
+            "total_return_pct": 6.807146026369629,
+            "cagr_pct": 6.408042294890914,
+            "max_drawdown_pct": -7.586818591249525,
+            "sortino_ratio": 0.35881815453146443,
+            "profit_factor": 1.3338888862628402,
+            "win_rate_pct": 38.095238095238095,
+            "total_trades": 42,
+            "avg_win_usd": 169.96628229703413,
+            "avg_loss_usd": -78.41330438906074,
+            "roi_after_fees_pct": 6.807146026369629
+        },
+        "Delayed Entry": {
+            "initial_capital": 10000.0,
+            "final_capital": 11070.29754847028,
+            "total_return_pct": 10.702975484702803,
+            "cagr_pct": 10.064926163028499,
+            "max_drawdown_pct": -10.345771909472422,
+            "sortino_ratio": 0.587255276086165,
+            "profit_factor": 1.587918159393635,
+            "win_rate_pct": 41.46341463414634,
+            "total_trades": 41,
+            "avg_win_usd": 170.04616814287033,
+            "avg_loss_usd": -75.85363791493815,
+            "roi_after_fees_pct": 10.702975484702803
+        },
+        "Price Gap 1%": {
+            "initial_capital": 10000.0,
+            "final_capital": 5511.264602176767,
+            "total_return_pct": -44.88735397823233,
+            "cagr_pct": -42.988759211467,
+            "max_drawdown_pct": -45.495832695804744,
+            "sortino_ratio": -1.4670359163410376,
+            "profit_factor": 0.15447338202249053,
+            "win_rate_pct": 14.285714285714285,
+            "total_trades": 42,
+            "avg_win_usd": 136.67816071921462,
+            "avg_loss_usd": -147.46678783718113,
+            "roi_after_fees_pct": -44.88735397823233
+        }
+    },
+    "risk_stress": {
+        "Sizing_Reduction": "PASS",
+        "VaR_Breach_Detection": "PASS",
+        "VaR_Safe_Detection": "PASS"
+    }
+}

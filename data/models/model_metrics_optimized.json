@@ -1,0 +1,45 @@
+{
+    "auc": 0.5574243019571201,
+    "n_features": 66,
+    "best_xgb_params": {
+        "n_estimators": 299,
+        "max_depth": 5,
+        "learning_rate": 0.011130832656399026,
+        "subsample": 0.5000914730856297,
+        "colsample_bytree": 0.7250331690848981
+    },
+    "best_lgb_params": {
+        "n_estimators": 100,
+        "num_leaves": 30,
+        "learning_rate": 0.010930249725850499,
+        "feature_fraction": 0.56806202301657,
+        "bagging_fraction": 0.8116308918018159
+    },
+    "meta_coefs": {
+        "xgb": 2.2786125799283097,
+        "lgb": 1.0959255315349437,
+        "lr": 0.06622925471361434
+    },
+    "top_features": [
+        "eth_rsi_14",
+        "btc_alpha_trade_imbalance",
+        "btc_alpha_vwap_reversal",
+        "btc_volume_lag_3",
+        "btc_ret_lag_3",
+        "btc_zscore_5",
+        "btc_ret_lag_1",
+        "alpha_cross_asset_spread",
+        "btc_volume_lag_1",
+        "btc_alpha_vol_imbalance",
+        "eth_zscore_10",
+        "alpha_eth_idiosyncratic",
+        "btc_rsi_14",
+        "btc_bb_width",
+        "btc_macd_diff",
+        "eth_roll_std_20",
+        "eth_alpha_vwap_reversal",
+        "eth_alpha_vpin_proxy",
+        "eth_ret_lag_3",
+        "eth_alpha_vol_imbalance"
+    ]
+}

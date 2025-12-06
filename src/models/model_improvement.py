@@ -27,7 +27,7 @@ logger = logging.getLogger("model_improvement")
 # Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
-FEATURES_FILE = DATA_DIR / "features" / "features_1H_advanced.parquet"
+FEATURES_FILE = DATA_DIR / "features" / "features_1H_mega_alpha.parquet"
 MODELS_DIR = DATA_DIR / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -37,7 +37,13 @@ np.random.seed(SEED)
 def load_data(filepath: Path = FEATURES_FILE) -> pd.DataFrame:
     """Load feature dataset."""
     logger.info(f"📥 Loading data from {filepath}...")
-    df = pd.read_parquet(filepath)
+    logger.info(f"📥 Loading data from {filepath}...")
+    # Fallback to CSV if Parquet fails or just use CSV
+    csv_path = filepath.with_suffix(".csv")
+    if csv_path.exists():
+        df = pd.read_csv(csv_path)
+    else:
+        df = pd.read_parquet(filepath)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
     df = df.sort_values("timestamp").reset_index(drop=True)
     return df
@@ -45,6 +51,8 @@ def load_data(filepath: Path = FEATURES_FILE) -> pd.DataFrame:
 def prepare_features(df: pd.DataFrame, target_col: str = "y_direction_up") -> Tuple[pd.DataFrame, pd.Series, StandardScaler]:
     """Prepare features and target."""
     exclude_cols = ["timestamp", target_col, "btc_ret_fwd_1"]
+    # Explicitly ensure we are using all columns except excluded ones
+    # The new alpha columns (alpha_*) will be automatically included here
     feature_cols = [c for c in df.columns if c not in exclude_cols]
     
     X = df[feature_cols]
@@ -213,7 +221,22 @@ def main():
     with open(best_model_path, "wb") as f:
         pickle.dump(xgb_model, f)
         
-    logger.info("✅ Model Improvement Pipeline Complete.")
+    # Save Scaler
+    scaler_path = MODELS_DIR / "scaler_opt.pkl"
+    with open(scaler_path, "wb") as f:
+        pickle.dump(scaler, f)
+        
+    # 6. Train and Save Regime Model
+    logger.info("🛡️ Training Regime Model...")
+    from src.models.regime_model import RegimeDetector
+    regime_model = RegimeDetector()
+    regime_model.fit(df, symbol="btc") # Fit on full history
+    
+    regime_model_path = MODELS_DIR / "regime_model.pkl"
+    regime_model.save(regime_model_path)
+    logger.info(f"✅ Regime Model Saved to {regime_model_path}")
+
+    logger.info(f"✅ Model Improvement Pipeline Complete. Saved to {best_model_path} and {scaler_path}")
 
 if __name__ == "__main__":
     main()

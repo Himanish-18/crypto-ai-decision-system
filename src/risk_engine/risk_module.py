@@ -50,22 +50,45 @@ class RiskEngine:
         # Target Risk: 1% of Capital
         # Position = (Capital * Risk_Pct) / Volatility
         # This ensures constant dollar risk regardless of volatility.
+        # 1. Volatility Scaling
+        # Target Risk: 1% of Capital
+        # Value = (Capital * Risk_Pct) / Volatility
         target_risk_amount = self.capital * self.max_risk_per_trade
-        vol_scaled_size_value = target_risk_amount / max(volatility, 0.001) # Avoid div by zero
+        vol_scaled_size_value = target_risk_amount / max(volatility, 0.001) 
         
         # 2. Kelly Criterion (Bounded)
-        kelly_fraction = (win_rate * 2) - 1
-        kelly_size_value = self.capital * max(0, kelly_fraction)
+        # Assuming win_rate > 0.5 to have positive sizing
+        if win_rate > 0.5:
+            kelly_fraction = (win_rate * 2) - 1
+            kelly_size_value = self.capital * kelly_fraction
+        else:
+            kelly_size_value = 0.0
+
+        # 3. Gap-Safe Sizing
+        gap_risk_pct = 0.02 
+        # Max loss allowed for gap = 2% of capital (Capital * 2 * Risk_Per_Trade?) NO.
+        # Max Gap Loss should probably not exceed Max Drawdown tolerance for a single event?
+        # Let's say max gap loss = 1% of Capital (same as trade risk).
+        max_gap_loss = self.capital * self.max_risk_per_trade
+        gap_safe_value = max_gap_loss / gap_risk_pct
+
+        # 4. Combine
+        # Take min of constraints
+        final_value = min(vol_scaled_size_value, gap_safe_value)
         
-        # 3. Combine (Take Minimum)
-        # We want the size that satisfies BOTH volatility target and Kelly optimality.
-        raw_size_value = min(vol_scaled_size_value, kelly_size_value)
-        
-        # 4. Hard Limits
+        # Apply Kelly as a potential reducer if edge is small, but don't force full Kelly if it's huge.
+        # Usually Kelly is an upper bound on leverage. 
+        # Let's limit to Half-Kelly for safety.
+        if kelly_size_value > 0:
+             final_value = min(final_value, kelly_size_value * 0.5)
+        else:
+             final_value = 0.0 # No edge
+             
+        # 5. Hard Limits (Max Position Size)
         max_allowed_value = self.capital * self.max_position_size_pct
-        final_size_value = min(raw_size_value, max_allowed_value)
+        final_value = min(final_value, max_allowed_value)
         
-        units = final_size_value / entry_price
+        units = final_value / entry_price
         return units
 
     def check_var_limit(self, current_portfolio_value: float, current_volatility: float, confidence_level: float = 0.95) -> bool:
@@ -94,8 +117,28 @@ class RiskEngine:
         tp = entry_price + (sl_dist * rr_ratio)
         
         return {
-            "stop_loss": hard_sl,
-            "take_profit": tp,
-            "trailing_stop_pct": volatility, # Trail by 1 vol unit
             "soft_exit_prob": self.soft_exit_prob
         }
+
+    def check_drawdown_limit(self, current_equity: float = None, peak_equity: float = None) -> bool:
+        """
+        Circuit Breaker: Stop trading if drawdown exceeds limit.
+        """
+        # If no equity passed, assume self.capital is current equity.
+        # But for stateful drawdown, we need to track peak.
+        # Simple Stateless Check: If current capital < 0.85 * Initial (15% DD from start)
+        # This assumes self.capital is UPDATED externally.
+        
+        limit = 0.85 # 15% Max Drawdown allowed
+        if current_equity is None:
+             current_equity = self.capital
+             
+        # Ideally we track High Water Mark. 
+        # But simplified: If we lost 15% of *initial account size* ($10k), stop.
+        initial_capital = 10000.0 # Hardcoded base for safety or passed in init
+        
+        if current_equity < (initial_capital * limit):
+             logger.critical(f"🛑 KILL SWITCH: Equity {current_equity} < {limit*100}% of {initial_capital}")
+             return False # Halt
+             
+        return True

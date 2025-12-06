@@ -47,10 +47,14 @@ class TradingDecision:
                     confirmed = False
                     decision["reason"] = "Signal Rejected: Negative CVD"
                 
-                # Require Order Imbalance favoring bids
-                if microstructure.get('order_imbalance_10', 0) < -0.1:
-                    confirmed = False
-                    decision["reason"] = "Signal Rejected: Order Imbalance Sell Pressure"
+                # Require Order Imbalance favoring execution side
+                obi = microstructure.get('obi', 0)
+                if signal == 1 and obi < -0.3: # Trying to buy into heavy sell pressure
+                     # But wait, maybe contrarian? 
+                     # Goal: Reduce slippage/risk. If book is heavy Sell, price might drop.
+                     # We skip trade.
+                     confirmed = False
+                     decision["reason"] = f"Signal Rejected: OBI ({obi:.2f}) indicates Sell Pressure"
 
             if confirmed:
                 # 3. Calculate Size

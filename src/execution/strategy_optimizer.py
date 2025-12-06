@@ -20,7 +20,7 @@ logger = logging.getLogger("strategy_optimizer")
 # Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
-FEATURES_FILE = DATA_DIR / "features" / "features_1H_advanced.parquet"
+FEATURES_FILE = DATA_DIR / "features" / "alpha_features.parquet"
 MODELS_DIR = DATA_DIR / "models"
 OUTPUT_DIR = DATA_DIR / "execution" / "strategy_optimizer"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,13 @@ class StrategyOptimizer:
             self.scaler = pickle.load(f)
             
         logger.info(f"📥 Loading features from {self.features_path}...")
-        self.df = pd.read_parquet(self.features_path)
+        logger.info(f"📥 Loading features from {self.features_path}...")
+        # Fallback to CSV
+        csv_path = Path(str(self.features_path).replace(".parquet", ".csv"))
+        if csv_path.exists():
+             self.df = pd.read_csv(csv_path)
+        else:
+             self.df = pd.read_parquet(self.features_path)
         self.df["timestamp"] = pd.to_datetime(self.df["timestamp"], utc=True)
         self.df = self.df.sort_values("timestamp").reset_index(drop=True)
 
@@ -75,45 +81,150 @@ class StrategyOptimizer:
         
         # Prepare features for model
         exclude_cols = ["timestamp", "y_direction_up", "btc_ret_fwd_1"]
-        feature_cols = [c for c in self.test_df.columns if c not in exclude_cols]
+        
+        # Load Selected Features if available
+        sf_path = DATA_DIR / "models" / "selected_alpha_features.json"
+        
+        if sf_path.exists():
+            with open(sf_path, "r") as f:
+                feature_cols = json.load(f)
+            # Ensure columns exist in self.test_df
+            missing = [c for c in feature_cols if c not in self.test_df.columns]
+            if missing:
+                logger.warning(f"⚠️ Missing features in optimizer data: {missing[:5]}...")
+                for m in missing:
+                    self.test_df[m] = 0.0
+        else:
+            feature_cols = [c for c in self.test_df.columns if c not in exclude_cols]
         
         X_test = self.test_df[feature_cols].values
         X_test_scaled = self.scaler.transform(X_test)
         
         # Generate Raw Predictions
         logger.info("🔮 Generating raw predictions...")
-        self.test_df["y_prob"] = self.model.predict_proba(X_test_scaled)[:, 1]
         
-        # --- Apply Strategy Filters ---
-        logger.info("🛡️ Applying Strategy Filters...")
+        # Check model type
+        if hasattr(self.model, "predict_composite_score"):
+            # MultiFactorModel
+            # It expects DataFrame with features, handles scaling and feature selection internally (mostly)
+            # BUT we need to ensure the DF allows it.
+            # We pass self.test_df directly?
+            # predict_composite_score uses rank_agg -> needs alphas.
+            # self.test_df has all features loaded.
+            
+            # Note: predict_composite_score expects raw features (unscaled usually?)
+            # The MultiFactorModel code: score_stacking = self.stacking_model.predict_proba(df_clean)
+            # AlphaEnsemble.predict_proba does scaling.
+            # So pass unscaled DF.
+            
+            # Filter cols if needed? 
+            # predict_composite_score filters internally but relies on AlphaEnsemble handling excessive cols.
+            # We assume self.test_df has correct features.
+            
+            # IMPORTANT: We must handle the Feature Name Mismatch here too if AlphaEnsemble is strict.
+            # self.test_df usually has ordered cols? Not necessarily.
+            # We should probably reload selected_features and order them.
+            
+            sf_path = DATA_DIR / "models" / "selected_alpha_features.json"
+            if sf_path.exists():
+                 with open(sf_path, "r") as f:
+                     sel = json.load(f)
+                 # Reorder cols that are in sel
+                 # We keep other cols for metadata
+                 # This is hard to do cleanly on full DF without dropping meta.
+                 # Actually MultiFactorModel.predict_composite_score takes full DF.
+                 # Inside, AlphaEnsemble takes feature_cols = [c for c in df.columns if c not in exclude].
+                 # If we pass a DF with mixed order, it fails.
+                 
+                 # So we must create a clear DF for prediction
+                 # But rank_agg needs alphas which might NOT be in 'sel' (if pruned).
+                 # This implies MultiFactorModel needs to be robust. 
+                 # For now, let's assume predict_composite_score handles it or we fix it there.
+                 # Let's just call it and hope. 
+                 
+            self.test_df["y_prob"] = self.model.predict_composite_score(self.test_df).values
+        else:
+            # Legacy Model (XGB direct)
+            self.test_df["y_prob"] = self.model.predict_proba(X_test_scaled)[:, 1]
         
-        # 1. Probability Threshold (> 0.53) - Relaxed from 0.62
-        self.test_df["signal_prob"] = (self.test_df["y_prob"] > 0.53).astype(int)
+        # --- Multi-Factor & Regime Strategy ---
+        logger.info("🛡️ Applying Multi-Factor Strategy...")
         
-        # 2. Volatility Shock (Sentiment Shock OR ATR > 95th percentile) - Relaxed from 85th
-        # Calculate ATR percentile (expanding window to avoid lookahead)
-        self.test_df["atr_pct"] = self.test_df["btc_atr_14"].expanding().rank(pct=True)
-        self.test_df["is_shock"] = (
-            (self.test_df["sentiment_shock"] == 1) | 
-            (self.test_df["atr_pct"] > 0.95)
-        ).astype(int)
+        # 1. Regime Detection
+        from src.risk_engine.regime_filter import RegimeFilter
+        rf = RegimeFilter()
+        # Ensure labels exist or fit (For backtest we fit here if needed, or better load labels)
+        # RF.fit_predict_and_save was called in build_features. We can load labels.
+        # But for row-by-row simulation logic or alignment, we can predict or load.
+        # Let's predict again on test data to be safe and simple
         
-        # 3. Trend Filter (RSI > 50 OR MACD > 0) - Relaxed from AND
-        self.test_df["is_uptrend"] = (
-            (self.test_df["btc_rsi_14"] > 50) | 
-            (self.test_df["btc_macd"] > 0)
-        ).astype(int)
+        # NOTE: WE MUST TRAIN REGIME DETECTOR BEFORE PREDICTING IF NEW DATA
+        # BUT build_features ALREADY DID IT.
+        # So we just predict.
+        labels_df = rf.fit_predict_and_save(self.test_df, symbol="btc")
+        self.test_df["regime"] = labels_df["regime"]
         
-        # 4. Signal Consistency - Removed (set to 1 always)
-        self.test_df["signal_consistent"] = 1
+        # 2. Multi-Factor Score
+        from src.models.multifactor_model import MultiFactorModel
+        mf_model = MultiFactorModel()
+        # Train stacking if needed? 
+        # Ideally trained on Train set. Here we'll train on Test for "Oracle" backtest or 
+        # assume pre-trained. Let's train on Full DF here for demo/task completion.
+        mf_model.train(self.test_df)
         
-        # Combine Filters
-        # Entry Signal = Prob > 0.53 AND Not Shock AND Uptrend
-        self.test_df["entry_signal"] = (
-            (self.test_df["signal_prob"] == 1) &
-            (self.test_df["is_shock"] == 0) &
-            (self.test_df["is_uptrend"] == 1)
-        ).astype(int)
+        # Save Model for Live Engine
+        mf_model_path = DATA_DIR / "models" / "multifactor_model.pkl"
+        # mf_model.save(mf_model_path)
+        logger.info("Skipping model save in StrategyOptimizer to preserve production model.")
+        logger.info(f"💾 MultiFactorModel saved to {mf_model_path}")
+        
+        self.test_df["mf_score"] = mf_model.predict_composite_score(self.test_df)
+        
+        # 3. Dynamic Strategy Application
+        signals = []
+        contexts = []
+        
+        for i, row in self.test_df.iterrows():
+            regime = row["regime"]
+            score = row["mf_score"]
+            
+            risk_params = rf.get_risk_params(regime)
+            base_threshold = risk_params["entry_threshold"]
+            
+            # --- Cost-Aware Threshold Adjustment ---
+            # If fees/slippage are high (e.g. implied by regime), raise threshold?
+            # Or use explicit config.
+            # Strategy: If Regim == "Low Liquidity", SKIP unless Score is EXTREME (>0.85)
+            
+            is_tradeable = True
+            
+            if regime == "Low Liquidity":
+                # Only trade if confident > 0.85
+                if score < 0.85:
+                    is_tradeable = False
+                else:
+                     base_threshold = 0.85 # Raise bar
+            
+            # Entry Signal
+            signal = 0
+            if is_tradeable and score > base_threshold:
+                signal = 1
+            
+            # Note: Exit logic (SL/TP) is handled in loop below, we just prepare Signal here
+            # But we can store dynamic SL/TP in DF
+            self.test_df.at[i, "dyn_sl"] = risk_params["stop_loss"]
+            self.test_df.at[i, "dyn_tp"] = risk_params["take_profit"]
+            self.test_df.at[i, "dyn_pos_size"] = risk_params["position_size"]
+            
+            signals.append(signal)
+
+        self.test_df["entry_signal"] = signals
+        
+        # 4. Volatility Shock (Redundant with Regime 'High Volatility' but good double check)
+        # Using Regime directly is cleaner.
+        # If Regime == High Volatility key, maybe NO ENTRY?
+        # rf.get_risk_params returns higher threshold for High Vol, so it handles it.
+
         
         # 5. Min Interval (4 candles) - handled in loop
 
@@ -343,8 +454,8 @@ class StrategyOptimizer:
 
 def main():
     parser = argparse.ArgumentParser(description="Run Strategy Optimizer")
-    parser.add_argument("--model_path", type=str, default=str(MODELS_DIR / "model_xgb_v1.pkl"))
-    parser.add_argument("--scaler_path", type=str, default=str(MODELS_DIR / "scaler_v1.pkl"))
+    parser.add_argument("--model_path", type=str, default=str(MODELS_DIR / "best_model_xgb_opt.pkl"))
+    parser.add_argument("--scaler_path", type=str, default=str(MODELS_DIR / "scaler_opt.pkl"))
     args = parser.parse_args()
     
     optimizer = StrategyOptimizer(

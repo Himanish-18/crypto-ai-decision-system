@@ -146,6 +146,42 @@ with col_p2:
     else:
         st.info("No performance charts yet.")
 
+st.markdown("---")
+col_d1, col_d2 = st.columns(2)
+
+with col_d1:
+    st.subheader("📊 Regime Distribution (Live)")
+    if "regime" in df.columns:
+        regime_counts = df["regime"].value_counts().reset_index()
+        regime_counts.columns = ["Regime", "Count"]
+        fig_reg = px.pie(regime_counts, values="Count", names="Regime", hole=0.4)
+        st.plotly_chart(fig_reg, use_container_width=True)
+    else:
+        st.info("No regime data.")
+
+with col_d2:
+    st.subheader("🎯 Probability Distribution")
+    if "prediction_prob" in df.columns:
+        fig_hist = px.histogram(df, x="prediction_prob", nbins=20, title="Model Confidence")
+        fig_hist.add_vline(x=0.55, line_dash="dash", line_color="green", annotation_text="Threshold")
+        st.plotly_chart(fig_hist, use_container_width=True)
+    elif "mf_score" in df.columns:
+        fig_hist = px.histogram(df, x="mf_score", nbins=20, title="Model Confidence")
+        st.plotly_chart(fig_hist, use_container_width=True)
+    else:
+        st.info("No probability data.")
+
+st.markdown("---")
+st.subheader("🛡️ Stress Test Benchmarks (Baseline)")
+stress_data = {
+    "Scenario": ["Base Case", "High Slippage", "High Fees", "Gap Risk"],
+    "Profit Factor": [0.46, 0.23, 0.18, 0.48], # Hardcoded from V2 Audit
+    "Max Drawdown": ["-26.0%", "-42.3%", "-51.3%", "-28.7%"],
+    "Status": ["Baseline", "Critical", "Critical", "Robust"]
+}
+st.dataframe(pd.DataFrame(stress_data))
+st.caption("Live metrics should ideally outperform 'Base Case' and avoid 'Critical' scenarios.")
+
 # 2. Live Drift Detection
 st.markdown("---")
 st.header("⚠️ Live Drift Detection")
