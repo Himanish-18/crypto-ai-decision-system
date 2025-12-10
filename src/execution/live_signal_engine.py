@@ -1,4 +1,5 @@
 import logging
+import pytz
 import pickle
 import pandas as pd
 import numpy as np
@@ -77,12 +78,22 @@ class LiveSignalEngine:
         self.deribit = DeribitVolMonitor()
         self.iv_guard = IVGuard()
         self.portfolio_agent = PortfolioPPOAgent(input_dim=20, action_dim=5) # Init Agent
+        from src.models.loss_prediction_model import LossPredictionModel
+        from src.models.loss_prediction_model import LossPredictionModel
+        self.loss_guard = LossPredictionModel()
+        from src.risk_engine.correlation_guard import CorrelationGuard
+        self.corr_guard = CorrelationGuard(window_size=30)
+        from src.data.news_feed import NewsAggregator
+        from src.models.news_classifier import NewsSentimentModel
+        self.news_agg = NewsAggregator()
+        self.news_model = NewsSentimentModel()
         
         self.cache_dir = self.model_path.parent.parent / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         self.last_funding_rate = None
-        self.longs_disabled_until = 0 # Timestamp
+        self.last_funding_rate = None
+        self.longs_disabled_until = pd.Timestamp.min # Timestamp (Naive)
         
         # v13 Low Latency State
         self.use_rust = False
@@ -332,7 +343,10 @@ class LiveSignalEngine:
                     "signal": -1, # Force Sell/Exit
                     "signal_confidence": panic_score,
                     "block_reason": f"PEM Panic: {pem_out['reason']}",
-                    "execution_mode": "AGGRESSIVE" # Panic = Get out now
+                    "execution_mode": "AGGRESSIVE", # Panic = Get out now
+                    "strategy_context": context,
+                    "prediction_prob": 0.0,
+                    "ppo_size_scalar": 0.0
                  }
                  
             # --- v7 Funding Rate Logic ---
@@ -347,11 +361,16 @@ class LiveSignalEngine:
                           # Store timestamp
                           current_ts = candle_data["timestamp"].iloc[-1]
                           # Assume 5m candles -> 30 mins
-                          self.longs_disabled_until = current_ts + (6 * 5 * 60 * 1000) # ms
+                          self.longs_disabled_until = current_ts + pd.Timedelta(minutes=30) # 6 * 5m
                 self.last_funding_rate = current_fund
                 
             # Check Disable
             current_ts = candle_data["timestamp"].iloc[-1]
+            
+            # Initialize with compatible type if 0
+            if isinstance(self.longs_disabled_until, int) and self.longs_disabled_until == 0:
+                 self.longs_disabled_until = pd.Timestamp.min.replace(tzinfo=current_ts.tzinfo)
+
             if current_ts < self.longs_disabled_until:
                  logger.info("🚫 Longs temporarily disabled due to Funding Flip.")
                  # If probabilistic signal is Long, we block it.
@@ -361,14 +380,63 @@ class LiveSignalEngine:
                  return {
                     "timestamp": current_ts,
                     "signal": 0,
-                    "block_reason": "Funding Flip Cooldown"
+                    "block_reason": "Funding Flip Cooldown",
+                    "strategy_context": context,
+                    "prediction_prob": 0.0,
+                    "execution_mode": "MAKER",
+                    "ppo_size_scalar": 0.0
                  }
 
             # B. Noise/Chop Detection
             closes = candle_data["btc_close"]
             is_chop = self.noise_filter.is_chop(closes)
+            is_chop = self.noise_filter.is_chop(closes)
             if is_chop:
                 logger.warning("🌪️ Noise Filter: CHOP DETECTED. Requiring higher confidence (0.65).")
+
+            # C. Loss Guard Veto (v7.1)
+            # Feature Extraction for Loss Guard
+            try:
+                # 1h Return
+                ret_1h = candle_data["close"].pct_change(12).iloc[-1] if len(candle_data) >= 12 else 0.0 # 12 * 5m = 1h
+                # 4h Return
+                ret_4h = candle_data["close"].pct_change(48).iloc[-1] if len(candle_data) >= 48 else 0.0
+                # Skew (20 period)
+                skew = candle_data["close"].rolling(20).skew().iloc[-1] if len(candle_data) >= 20 else 0.0
+                # Spread Regime (Proxy: Volatility / Spread?) -> Simplified: Use Volatility
+                vol_1h = candle_data["close"].pct_change().rolling(12).std().iloc[-1]
+                # Funding Flip Bool
+                funding_flip = 1 if (self.last_funding_rate and "fundingRate" in candle_data.columns and 
+                                   np.sign(candle_data["fundingRate"].iloc[-1]) != np.sign(self.last_funding_rate)) else 0
+                
+                # Spread Regime (Dummy for now, or use Vol Adaptive logic)
+                spread_regime = 1 if volatility > 0.01 else 0 # 1=HighVol, 0=LowVol
+                
+                loss_feats = {
+                    "ret_1h": ret_1h,
+                    "ret_4h": ret_4h,
+                    "vol_1h": vol_1h,
+                    "skew": skew,
+                    "funding_flip": funding_flip,
+                    "spread_regime": spread_regime
+                }
+                
+                veto, loss_prob = self.loss_guard.check_veto(loss_feats)
+                if veto:
+                     logger.warning(f"🛡️ LossGuard VETO! P(Loss) {loss_prob:.2f} > 0.6. Blocking Trade.")
+                     return {
+                        "timestamp": current_ts,
+                        "signal": 0,
+                        "block_reason": f"LossGuard Veto (P={loss_prob:.2f})",
+                        "strategy_context": context,
+                        "prediction_prob": 0.0,
+                        "execution_mode": "MAKER",
+                        "ppo_size_scalar": 0.0
+                     }
+            except Exception as e:
+                logger.error(f"LossGuard Error: {e}")
+                # Fail open (continue) or fail closed? Fail Open usually better for aux safety unless critical.
+                pass
 
             # C. Adaptive Threshold
             adaptive_thresh = self.vol_adaptive.get_threshold(volatility)
@@ -377,13 +445,71 @@ class LiveSignalEngine:
             td_score = self.trend_depth.calculate(candle_data)
             logger.info(f"🌊 Trend Depth: {td_score:.4f}")
 
+            # C. Loss Guard Veto (v7.1) -- (Existing Block)
+            
+            # D. Correlation Guard (v7.2)
+            # Update Guard with latest prices
+            # TODO: Get real ETH/SOL/LTC prices from MarketRouter
+            # For now, we simulate correlated data to enable logic testing
+            btc_price = candle_data["close"].iloc[-1]
+            # Mock Peers (Correlated random walk)
+            # In production, pass real dict from engine input
+            mock_prices = {
+                "BTC": btc_price,
+                "ETH": btc_price * 0.05 + np.random.normal(0, 10), # Correlated
+                "SOL": btc_price * 0.001 + np.random.normal(0, 5),
+                "LTC": btc_price * 0.002 + np.random.normal(0, 2)
+            }
+            self.corr_guard.update(mock_prices)
+            
+            # Get Modifiers
+            # Use TCN score as proxy for current size intent (0.0 to 1.0)
+            corr_scalar, hedge_req, corr_debug = self.corr_guard.calculate_risk_modifiers(current_pos_size=tcn_score)
+            
+            if corr_scalar < 1.0:
+                logger.info(f"🔗 Correlation scalar applied: {corr_scalar:.2f}")
+
+            
+            # D. Correlation Guard (v7.2) -- (Existing Block)
+            # ...
+            # E. News Sentiment Guard (v7.3)
+            try:
+                # 1. Fetch Headlines
+                headlines = self.news_agg.fetch_headlines()
+                # 2. Classify
+                sentiment_score = self.news_model.predict(headlines)
+                
+                # Check Risk Condition: Bearish Sentiment (< -0.5) AND High Volatility
+                # Volatility threshold: e.g., 1.5x average ATR or > 1% move?
+                # Using 'vol_1h' if available, or simple ATR check
+                vol_metric = candle_data["btc_atr_14"].iloc[-1] / candle_data["btc_close"].iloc[-1] if "btc_atr_14" in candle_data.columns else 0.01
+                
+                if sentiment_score < -0.5 and vol_metric > 0.005: # 0.5% ATR ~ High Vol
+                    logger.warning(f"📰 News Risk: Sentiment {sentiment_score:.2f} (Bearish) + Vol {vol_metric:.4f}. Blocking Longs.")
+                    # Return Block Signal
+                    return {
+                        "timestamp": current_ts,
+                        "signal": 0,
+                        "block_reason": f"News Risk (Sent={sentiment_score:.2f})",
+                        "strategy_context": context,
+                        "prediction_prob": 0.0,
+                        "execution_mode": "MAKER",
+                        "ppo_size_scalar": 0.0
+                    }
+                elif sentiment_score < -0.1:
+                    logger.info(f"📰 News Sentiment: {sentiment_score:.2f} (Bearish). Caution advised.")
+                
+            except Exception as e:
+                logger.error(f"News Guard Error: {e}")
+            
             # 5. DQN Policy Check
             if self.dqn_mini:
                 # Use SMOOTHED score for DQN as requested
                 dqn_q = self.dqn_mini.predict_q_value(
-                    smooth_score, cnn_score, tcn_score, 
-                    current_regime=0.0, 
-                    volatility=volatility
+                    candle_data.iloc[-1],
+                    smooth_score, 
+                    cnn_score, 
+                    tcn_score
                 )
                 logger.info(f"🤖 DQN Policy Q-Value: {dqn_q:.6f}")
                 
@@ -394,7 +520,11 @@ class LiveSignalEngine:
                         "timestamp": candle_data["timestamp"].iloc[-1],
                         "signal": 0,
                         "signal_confidence": 0.0,
-                        "block_reason": "DQN Veto"
+                        "block_reason": "DQN Veto",
+                        "strategy_context": context,
+                        "prediction_prob": float(smooth_score),
+                        "execution_mode": "MAKER",
+                        "ppo_size_scalar": 0.0
                      }
 
         # v7 Sideways Micro-Scalp Mode
@@ -526,6 +656,10 @@ class LiveSignalEngine:
             return {
                 "timestamp": candle_data["timestamp"].iloc[-1],
                 "signal": 0,
-                "block_reason": block_reason
+                "prediction_prob": float(smooth_score),
+                "strategy_context": context,
+                "block_reason": block_reason,
+                "execution_mode": execution_mode,
+                "ppo_size_scalar": 0.0
             }
 

@@ -29,6 +29,20 @@ class PanicExitModel:
             
         latest = df.iloc[-1]
         
+        # Dynamic Column Detection Helper
+        def get_col(candidates):
+            for c in candidates:
+                if c in df.columns: return c
+            return None
+
+        high_col = get_col(["high", "btc_high"])
+        low_col = get_col(["low", "btc_low"])
+        close_col = get_col(["close", "btc_close"])
+        vol_col = get_col(["volume", "btc_volume"])
+        
+        if not all([high_col, low_col, close_col, vol_col]):
+             return {"panic_score": 0.0, "exit_signal": False, "heads": {}, "reason": "Missing Columns"}
+        
         # --- Head A: Microstructure (Spread Spike) ---
         # Logic: Sudden expansion in High-Low Range relative to ATR
         # Feature: Range / ATR
@@ -38,16 +52,17 @@ class PanicExitModel:
             atr = df["atr"].iloc[-1]
         else:
             # Simple ATR 14
+            # Use detected cols
             tr = np.maximum(
-                df["high"] - df["low"], 
-                np.abs(df["high"] - df["close"].shift(1)), 
-                np.abs(df["low"] - df["close"].shift(1))
+                df[high_col] - df[low_col], 
+                np.abs(df[high_col] - df[close_col].shift(1)), 
+                np.abs(df[low_col] - df[close_col].shift(1))
             )
             atr = tr.rolling(14).mean().iloc[-1]
             
         if atr == 0: atr = 1.0
         
-        current_range = latest["high"] - latest["low"]
+        current_range = latest[high_col] - latest[low_col]
         spread_ratio = current_range / atr
         
         # Activation: Sigmoid-like logic. 
@@ -57,10 +72,10 @@ class PanicExitModel:
         # --- Head B: Orderflow (Volume Burst & Imbalance) ---
         # Logic: Volume Spike (> 3x Avg) + Price Drop
         
-        vol_avg = df["volume"].rolling(20).mean().iloc[-1]
+        vol_avg = df[vol_col].rolling(20).mean().iloc[-1]
         if vol_avg == 0: vol_avg = 1.0
         
-        vol_ratio = latest["volume"] / vol_avg
+        vol_ratio = latest[vol_col] / vol_avg
         
         # Imbalance: Close near Low (Bearish) or High (Bullish Panic Buy?)
         # User defined "Panic Exit" usually implies Crash/Dump protection for Longs.

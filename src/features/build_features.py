@@ -1,8 +1,12 @@
 import os
+import logging
 from pathlib import Path
 import pandas as pd
 import numpy as np
 import ta
+
+# Setup Logging
+logger = logging.getLogger(__name__)
 
 # Constants
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,7 +21,7 @@ def load_data() -> pd.DataFrame:
     if not CLEAN_FILE.exists():
         raise FileNotFoundError(f"Input file not found: {CLEAN_FILE}")
     
-    print(f"📥 Loading data from {CLEAN_FILE}...")
+    logger.info(f"📥 Loading data from {CLEAN_FILE}...")
     df = pd.read_csv(CLEAN_FILE)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
     df = df.sort_values("timestamp").reset_index(drop=True)
@@ -25,7 +29,7 @@ def load_data() -> pd.DataFrame:
 
 def add_ta_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Add Technical Indicators (RSI, MACD, BB, ATR) for BTC and ETH."""
-    print("📈 Adding Technical Indicators...")
+    logger.info("📈 Adding Technical Indicators...")
     df = df.copy()
     
     for symbol in ["btc", "eth"]:
@@ -59,7 +63,7 @@ def add_ta_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add Rolling Statistics (Mean, Std, Z-score, Momentum)."""
-    print("🔄 Adding Rolling Statistics...")
+    logger.info("🔄 Adding Rolling Statistics...")
     df = df.copy()
     
     windows = [5, 10, 20, 50]
@@ -88,7 +92,7 @@ def add_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_lagged_features(df: pd.DataFrame) -> pd.DataFrame:
     """Add Lagged Features to prevent look-ahead bias."""
-    print("⏳ Adding Lagged Features...")
+    logger.info("⏳ Adding Lagged Features...")
     df = df.copy()
     
     lags = [1, 3, 6]
@@ -127,7 +131,7 @@ def add_lagged_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def engineer_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     """Engineer Sentiment Features (Upgraded)."""
-    print("🧠 Engineering Sentiment...")
+    logger.info("🧠 Engineering Sentiment...")
     df = df.copy()
     
     # Fill missing
@@ -169,6 +173,9 @@ def engineer_sentiment(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def main():
+    # Setup Basic config for when running script directly
+    logging.basicConfig(level=logging.INFO)
+    
     try:
         df = load_data()
         
@@ -192,7 +199,7 @@ def main():
              df = alpha_signals.compute_all(df, symbol="eth")
 
         # 6. Order Flow Features (New)
-        print("🌊 Calculating Order Flow & Microstructure features...")
+        logger.info("🌊 Calculating Order Flow & Microstructure features...")
         from src.features.orderflow_features import OrderFlowFeatures
         of_feats = OrderFlowFeatures()
         df = of_feats.compute_all(df, symbol="btc")
@@ -202,7 +209,7 @@ def main():
         # 7. Order Book Features (From Parquet)
         ob_path = FEATURES_DIR / "orderbook_features.parquet"
         if ob_path.exists():
-             print(f"📖 Merging OrderBook Features from {ob_path}...")
+             logger.info(f"📖 Merging OrderBook Features from {ob_path}...")
              df_ob = pd.read_parquet(ob_path)
              df_ob["timestamp"] = pd.to_datetime(df_ob["timestamp"], utc=True)
              df_ob = df_ob.sort_values("timestamp")
@@ -221,7 +228,7 @@ def main():
                  if col != "timestamp":
                      df[col] = df[col].fillna(0) # or ffill? 0 is safer for "No Info"
         else:
-             print("⚠️ OrderBook Features not found. Creating placeholders.")
+             logger.warning("⚠️ OrderBook Features not found. Creating placeholders.")
              for col in ["spread_pct", "obi", "impact_cost", "liquidity_ratio"]:
                  df[col] = 0.0 # Use 0.0 instead of NaN to avoid dropna later
 
@@ -244,16 +251,16 @@ def main():
         # Clean final DF
         df = df.replace([np.inf, -np.inf], np.nan).dropna()
         
-        print(f"💾 Saving to {OUTPUT_ALPHA}...")
+        logger.info(f"💾 Saving to {OUTPUT_ALPHA}...")
         df.to_parquet(OUTPUT_ALPHA, index=False)
         
         # Also save to legacy paths for compatibility
         df.to_csv(OUTPUT_CSV, index=False)
         df.to_parquet(OUTPUT_PARQUET, index=False)
-        print("✅ Done.")
+        logger.info("✅ Done.")
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        logger.error(f"❌ Error: {e}")
         exit(1)
 
 if __name__ == "__main__":

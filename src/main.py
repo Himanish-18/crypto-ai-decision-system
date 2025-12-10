@@ -1,6 +1,7 @@
 import logging
 import time
 import pandas as pd
+import numpy as np
 import schedule
 from pathlib import Path
 from datetime import datetime
@@ -17,6 +18,8 @@ from src.risk_engine.risk_module import RiskEngine
 import threading
 import asyncio
 from src.features.build_features import add_ta_indicators, add_rolling_features, add_lagged_features, engineer_sentiment
+from src.features.alpha_signals import AlphaSignals
+from src.features.orderflow_features import OrderFlowFeatures
 
 # Setup Logging
 logging.basicConfig(
@@ -33,8 +36,8 @@ logger = logging.getLogger("main")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 MODELS_DIR = DATA_DIR / "models"
-MODEL_PATH = MODELS_DIR / "multifactor_model.pkl" # Updated to new Regime Model
-SCALER_PATH = MODELS_DIR / "scaler.pkl" # Updated/Dummy scaler path
+MODEL_PATH = MODELS_DIR / "multifactor_model.pkl" 
+SCALER_PATH = MODELS_DIR / "scaler.pkl" 
 LOG_DIR = DATA_DIR / "execution" / "logs"
 
 def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -55,6 +58,21 @@ def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
     
     # 4. Sentiment (Upgraded)
     df = engineer_sentiment(df)
+
+    # 5. Alpha Signals
+    alpha_signals = AlphaSignals()
+    df = alpha_signals.compute_all(df, symbol="btc")
+    if "eth_close" in df.columns:
+        df = alpha_signals.compute_all(df, symbol="eth")
+    
+    # 6. Order Flow Features
+    of_feats = OrderFlowFeatures()
+    df = of_feats.compute_all(df, symbol="btc")
+    if "eth_close" in df.columns:
+        df = of_feats.compute_all(df, symbol="eth")
+    
+    # Fill NaNs
+    df = df.replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(0)
     
     return df
 
@@ -64,39 +82,57 @@ def job():
     try:
         # 1. Fetch Data (History for features)
         # Using v8 MarketRouter (Unified 1m Candles)
+        
         # Fetch BTC
         df_btc = asyncio.run(market_router.fetch_unified_candles("BTC/USDT", timeframe="1m", limit=1000))
         if df_btc is None or len(df_btc) < 100:
             logger.warning("Insufficient BTC data (MarketRouter). Skipping cycle.")
             return
+        df_btc = df_btc.rename(columns={"volume": "btc_volume"})
+        df_btc["volume"] = df_btc["btc_volume"] # Legacy support
+        df_btc["high"] = df_btc["btc_high"]
+        df_btc["low"] = df_btc["btc_low"]
+        df_btc["close"] = df_btc["btc_close"]
+        df_btc["open"] = df_btc["btc_open"]
 
-        # Fetch ETH (Optional/Future use) - Commented out for speed unless needed
-        # df_eth = asyncio.run(market_router.fetch_unified_candles("ETH/USDT", timeframe="1m", limit=1000))
-        
-        # Use BTC df
-        df = df_btc
-        
+        # Fetch ETH (Required for TCN Model)
+        df_eth = asyncio.run(market_router.fetch_unified_candles("ETH/USDT", timeframe="1m", limit=1000))
+        if df_eth is not None:
+             df_eth = df_eth.rename(columns={"volume": "eth_volume"})
+             
+             # Merge
+             df = pd.merge(df_btc, df_eth, on="timestamp", how="inner", suffixes=("", "_eth"))
+        else:
+             logger.warning("Insufficient ETH data. Model might fail if features missing.")
+             df = df_btc
+             if "btc_volume" not in df.columns: df = df.rename(columns={"volume": "btc_volume"})
+
         if len(df) < 100:
-             logger.warning("Insufficient data. Skipping cycle.")
+             logger.warning("Insufficient data after merge. Skipping cycle.")
              return
 
         # 2. Calculate Basic Features
         df = calculate_features(df)
-        
-        # NOTE: Advanced Features (Alphas, OrderFlow) are now handled internally by LiveSignalEngine
-        # to ensure consistency with Training Loop.
-            
-        # --- GUARDIAN CHECK 1: System Health ---
             
         # --- GUARDIAN CHECK 1: System Health ---
         if not guardian.check_system_health(signal_engine.model, signal_engine.scaler, df):
             logger.critical("🛑 Guardian: System Health Check Failed. Aborting Cycle.")
             return
         
-        # 3. Get Latest Closed Candle
-        latest_candle = df.iloc[[-2]].copy().reset_index(drop=True)
-        current_price = latest_candle["btc_close"].iloc[0]
-        timestamp = latest_candle["timestamp"].iloc[0]
+        # 3. Get Latest Context (Pass History Window)
+        # Pass last 300 candles (excluding the very last if likely open/incomplete, but fetch_unified returns closed usually? 
+        # MarketRouter usually returns completed candles. Latest might be open depending on exchange.
+        # Safest is to take up to -1 if we are sure -1 is open.
+        # Assuming fetch returns open candle at end -> slice up to -1.
+        # If fetch returns only closed -> slice all.
+        # Let's assume -1 is open/latest.
+        
+        # Define window size for models (some need 64, some 100)
+        window_size = 300
+        latest_window = df.iloc[-(window_size+1):-1].copy().reset_index(drop=True)
+         
+        current_price = latest_window["btc_close"].iloc[-1]
+        timestamp = latest_window["timestamp"].iloc[-1]
         
         logger.info(f"Processing Candle: {timestamp} | Price: {current_price}")
         
@@ -107,7 +143,7 @@ def job():
             return
             
         # 4. Generate Signal
-        signal_output = signal_engine.process_candle(latest_candle)
+        signal_output = signal_engine.process_candle(latest_window)
         
         # --- GUARDIAN CHECK 3: Market Conditions ---
         if not guardian.check_market_conditions(signal_output["strategy_context"]):
@@ -162,7 +198,27 @@ def job():
     except Exception as e:
         logger.error(f"Error in trading cycle: {e}", exc_info=True)
 
+
+# --- CONFIGURATION ---
+LIVE_TRADING = True # Set to True to enable Real-Money Safety Checks & Execution
+
 if __name__ == "__main__":
+    # Safety Confirmation
+    if LIVE_TRADING:
+        print("\n\n" + "!"*60)
+        print("⚠️  WARNING: LIVE TRADING MODE ENABLED")
+        print("⚠️  REAL MONEY IS AT RISK.")
+        print("⚠️  ENSURE YOU HAVE SET 'BINANCE_TESTNET=True' IN .env FOR TESTING.")
+        print("!"*60 + "\n")
+        
+        # Determine if we are really on mainnet?
+        # We can't know for sure until Executor inits, but we can warn generally.
+        
+        user_input = input("Type 'YES' to continue with LIVE TRADING: ")
+        if user_input.strip() != "YES":
+            print("❌ Start Aborted.")
+            exit(0)
+            
     logger.info("🚀 Live Trading Bot Started")
     
     # Initialize Components

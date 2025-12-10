@@ -13,4 +13,4 @@ pyarrow
 hmmlearn
 seaborn
 jupyter
-ipykernel
+ipykernelwebsockets

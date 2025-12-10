@@ -56,8 +56,9 @@ class TCNLiteProxy:
             return 0.5
             
         # Ensure input has features
-        X = row_data[self.feature_cols]
-        # HistGBM handles NaNs natively!
+        # HistGBM handles NaNs natively, but we need to ensure columns exist!
+        # Reindex checks for missing columns and adds them as NaN (or fill_value)
+        X = row_data.reindex(columns=self.feature_cols, fill_value=0.0)
         
         prob = self.model.predict_proba(X)[0, 1]
         return prob

@@ -1,8 +1,8 @@
 {
-    "profit_factor": 2.5210649059975028,
+    "profit_factor": 4.451064905997462,
     "max_drawdown": -0.048959615617496725,
     "accuracy": 0.55,
     "training_timestamp": "2025-12-06 04:41:06.309945",
-    "version": "v9_artl_1531",
-    "last_trained": "2025-12-06 15:31:55.554435"
+    "version": "v9_artl_1100",
+    "last_trained": "2025-12-08 11:00:39.516831"
 }
