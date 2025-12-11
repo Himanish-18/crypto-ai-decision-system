@@ -11,3 +11,9 @@ sources:
   coinstats: "https://api.coinstats.app/public/v1/news/latest?skip=0&limit=50"
 
 logging_level: "INFO"
+
+deployment:
+  go_live: false
+  feature_flags:
+    enable_risk_engine: true
+    enable_regime_veto: true

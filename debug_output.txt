@@ -1,0 +1,33 @@
+INFO:regime_ensemble:HMM Trained.
+INFO:regime_ensemble:XGB Regime Model Trained.
+INFO:meta_brain_v21:🧠 v21 Regime Ensemble Loaded from data/regime_test/regime_ensemble.pkl
+INFO:meta_brain_v21:🧠 v21 Regime Risk: 0.51 ({'hmm_state': 1, 'hmm_prob': np.float64(1.0), 'xgb_prob': np.float32(0.01251987)})
+INFO:meta_brain_v17:🦅 Macro Regime: NEUTRAL
+INFO:meta_brain:🧠 Meta-Brain Selects: FlowReaper | Sig: 1.0 | Conf: 0.75
+INFO:moe_router:🧠 MoE Routing: Regime=NEUTRAL -> Expert=MeanReverter -> Signal=0.0
+INFO:meta_brain_v18:🧠 v18 Insight: MoE says MeanReverter -> 0.00 (Stable & Certain)
+INFO:meta_brain_v21:🧠 v21 Regime Risk: 0.51 ({'hmm_state': 1, 'hmm_prob': np.float64(1.0), 'xgb_prob': np.float32(0.01251987)})
+INFO:meta_brain_v17:🦅 Macro Regime: NEUTRAL
+INFO:meta_brain:🧠 Meta-Brain Selects: MomentumHunter | Sig: -1.0 | Conf: 0.85
+INFO:moe_router:🧠 MoE Routing: Regime=NEUTRAL -> Expert=MeanReverter -> Signal=0.0
+INFO:meta_brain_v18:🧠 v18 Insight: MoE says MeanReverter -> 0.00 (Stable & Certain)
+F
+======================================================================
+FAIL: test_hard_veto (__main__.TestRegimeV21.test_hard_veto)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/soumyadebtripathy/crypto-ai-decision-system/tests/test_regime_v21.py", line 87, in test_hard_veto
+    self.assertEqual(decision_risk.get("veto_reason"), "REGIME_RISK")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 'REGIME_RISK'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.116s
+
+FAILED (failures=1)
+DEBUG: src.decision.meta_brain_v21 MODULE LOADED
+DEBUG: MetaBrainV21 source: <class 'src.decision.meta_brain_v21.MetaBrainV21'>
+DEBUG: v21 think called. market_data keys: dict_keys(['candles', 'regime', 'action'])
+Safe Decision: {'action': 'BUY', 'size': 0.1875, 'agent': 'FlowReaper', 'reason': 'Selected FlowReaper (Conf 0.75)'}
+DEBUG: v21 think called. market_data keys: dict_keys(['candles', 'regime'])
+Risk Decision: {'action': 'SELL', 'size': 0.159375, 'agent': 'MomentumHunter', 'reason': 'Selected MomentumHunter (Conf 0.85)'}

@@ -22,8 +22,14 @@ def load_secrets():
     testnet_str = os.getenv("BINANCE_TESTNET", "True").lower()
     is_testnet = testnet_str in ["true", "1", "yes"]
     
+    # Validation: Check for placeholders or empty strings
+    if api_key and "your_api_key" in api_key:
+        api_key = None
+    if api_secret and "your_secret_key" in api_secret:
+        api_secret = None
+    
     if not api_key or not api_secret:
-        logger.warning("⚠️ Binance API Keys not found in environment. Bot will run in Mock/Simulation mode.")
+        logger.warning("⚠️ Binance API Keys missing or placeholders detected. Bot will run in Mock/Simulation mode.")
         return {
             "BINANCE_API_KEY": None,
             "BINANCE_API_SECRET": None,

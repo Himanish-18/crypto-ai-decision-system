@@ -28,7 +28,7 @@ class MarketRouter:
             exchange_class = getattr(ccxt, name)
             self.exchanges[name] = exchange_class({
                 'enableRateLimit': True,
-                'timeout': 5000,
+                'timeout': 10000, # Increased to 10s
             })
             # Load markets to verify connection
             # self.exchanges[name].load_markets() # Can be slow, do lazy load or async
@@ -61,45 +61,37 @@ class MarketRouter:
         exchange = self.exchanges.get(exchange_name)
         if not exchange: return None
         
-        # Map symbol if needed? (e.g. BTC-USDT vs BTC/USDT)
-        # CCXT handles most standardization.
+        # Retry Logic (3 attempts)
+        for attempt in range(3):
+            try:
+                # Sync wrapper for async context if needed
+                # Using asyncio.to_thread to run blocking ccxt call
+                ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, timeframe, limit=limit)
+                
+                df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+                
+                # Standardization Columns
+                # v16 Update: Keep generic names 'open', 'close' for easier downstream processing
+                # The caller knows which symbol they asked for.
+                
+                # If we need asset specific later, we can add aliases, but primary should be standard.
+                base_asset = symbol.split('/')[0].lower()
+                # Add aliases for backward compatibility if needed, but primary is standard
+                df[f"{base_asset}_open"] = df["open"]
+                df[f"{base_asset}_high"] = df["high"]
+                df[f"{base_asset}_low"] = df["low"]
+                df[f"{base_asset}_close"] = df["close"]
+                df[f"{base_asset}_volume"] = df["volume"]
+                
+                return df
+                
+            except Exception as e:
+                logger.warning(f"Fetch failed for {exchange_name} (Attempt {attempt+1}/3): {e}")
+                await asyncio.sleep(2) # Backoff
         
-        try:
-            # Sync wrapper for async context if needed, but here we assume calling from async loop or use run_in_executor
-            # CCXT python is sync by default unless ccxt.async_support is used.
-            # For simplicity in this v1, we wrap sync call.
-            
-            # Using asyncio.to_thread to run blocking ccxt call
-            ohlcv = await asyncio.to_thread(exchange.fetch_ohlcv, symbol, timeframe, limit=limit)
-            
-            df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-            
-            # Standardization Columns
-            rename_map = {
-                "open": f"{symbol.split('/')[0].lower()}_open", # btc_open
-                "high": f"{symbol.split('/')[0].lower()}_high",
-                "low": f"{symbol.split('/')[0].lower()}_low",
-                "close": f"{symbol.split('/')[0].lower()}_close",
-                "volume": "volume"
-            }
-            # Actually, system standard uses "btc_close" etc.
-            # But "volume" is generic.
-            
-            # Let's keep specific naming consistent with current system
-            base_asset = symbol.split('/')[0].lower()
-            df = df.rename(columns={
-                "open": f"{base_asset}_open",
-                "high": f"{base_asset}_high",
-                "low": f"{base_asset}_low",
-                "close": f"{base_asset}_close",
-            })
-            
-            return df
-            
-        except Exception as e:
-            logger.warning(f"Fetch failed for {exchange_name}: {e}")
-            return None
+        logger.error(f"❌ {exchange_name} failed after 3 attempts.")
+        return None
 
     async def get_aggregated_depth(self, symbol: str = "BTC/USDT", depth_limit: int = 10) -> Dict:
         """

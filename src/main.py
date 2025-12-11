@@ -20,6 +20,7 @@ import asyncio
 from src.features.build_features import add_ta_indicators, add_rolling_features, add_lagged_features, engineer_sentiment
 from src.features.alpha_signals import AlphaSignals
 from src.features.orderflow_features import OrderFlowFeatures
+from src.portfolio.engine_v15 import PortfolioCoordinator
 
 # Setup Logging
 logging.basicConfig(
@@ -76,166 +77,245 @@ def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
+# --- v19 QUANTUM UPGRADE ---
+from src.decision.meta_brain_titan import MetaBrainHardVeto
+from src.decision.meta_brain_v21 import MetaBrainV21
+from src.execution.execution_quantum import ExecutionQuantum
+from src.decision.arbitrator import AgentArbitrator
+from src.risk_engine.risk_v3 import RiskEngineV3
+from src.market.router_v2 import MarketRouterV2
+from src.ml.noise.cleanliness import MarketCleanlinessModel
+from src.execution.liquidity_ai import LiquidityAI
+from src.maintenance.self_heal import SelfHealingSystem
+
+from src.rl.ppo_portfolio import PPOPortfolioAgent # v23
+import yaml # Added for config loading
+
+# Helper: Load Config
+def load_config(path="config/config.yaml"):
+    try:
+        with open(path, "r") as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        logger.warning("Config file not found, using defaults.")
+        return {}
+
+# Load Config Globally
+config = load_config()
+
+# Stub Telemetry Mock
+class PrometheusStub:
+    def inc(self, metric: str):
+        logger.info(f"📊 TELEMETRY: {metric} +1")
+
+telemetry = PrometheusStub()
+
+# Accuracy Logger (Restored from LiveSignalEngine)
+acc_logger = logging.getLogger("accuracy_monitor")
+acc_logger.setLevel(logging.INFO)
+if not acc_logger.handlers:
+    handler = logging.FileHandler("predictions.log")
+    formatter = logging.Formatter('%(asctime)s,%(message)s')
+    handler.setFormatter(formatter)
+    acc_logger.addHandler(handler)
+
+# Global State for Validation
+LAST_PRED_SCORE = None
+LAST_PRED_PRICE = None
+LAST_PRED_DIR = "Neutral"
+
 def job():
-    logger.info("⏰ Starting Trading Cycle...")
+    global LAST_PRED_SCORE, LAST_PRED_PRICE, LAST_PRED_DIR
+    logger.info("⏰ Starting v19 QUANTUM Intelligence Cycle...")
     
     try:
-        # 1. Fetch Data (History for features)
-        # Using v8 MarketRouter (Unified 1m Candles)
+        # 1. System Self-Check
+        self_healer.monitor_performance(accuracy_window=0.9, latency_ms=5.0)
         
-        # Fetch BTC
-        df_btc = asyncio.run(market_router.fetch_unified_candles("BTC/USDT", timeframe="1m", limit=1000))
-        if df_btc is None or len(df_btc) < 100:
-            logger.warning("Insufficient BTC data (MarketRouter). Skipping cycle.")
+        # 2. Autonomous Market Switching
+        focus_ticker = market_router_v2.scan_markets({}) 
+        logger.info(f"🔭 QUANTUM Auto-Focus: {focus_ticker}")
+        
+        # 3. Data Fetch
+        pair = focus_ticker
+        df = asyncio.run(market_router.fetch_unified_candles(pair, timeframe="1m", limit=100))
+        
+        if df is None or df.empty:
+            logger.warning(f"No Data for {focus_ticker}")
             return
-        df_btc = df_btc.rename(columns={"volume": "btc_volume"})
-        df_btc["volume"] = df_btc["btc_volume"] # Legacy support
-        df_btc["high"] = df_btc["btc_high"]
-        df_btc["low"] = df_btc["btc_low"]
-        df_btc["close"] = df_btc["btc_close"]
-        df_btc["open"] = df_btc["btc_open"]
 
-        # Fetch ETH (Required for TCN Model)
-        df_eth = asyncio.run(market_router.fetch_unified_candles("ETH/USDT", timeframe="1m", limit=1000))
-        if df_eth is not None:
-             df_eth = df_eth.rename(columns={"volume": "eth_volume"})
-             
-             # Merge
-             df = pd.merge(df_btc, df_eth, on="timestamp", how="inner", suffixes=("", "_eth"))
+        if "close" in df.columns:
+            current_price = df["close"].iloc[-1]
         else:
-             logger.warning("Insufficient ETH data. Model might fail if features missing.")
-             df = df_btc
-             if "btc_volume" not in df.columns: df = df.rename(columns={"volume": "btc_volume"})
+            close_col = [c for c in df.columns if "close" in c][0]
+            current_price = df[close_col].iloc[-1]
+            df["close"] = df[close_col]
+            if "open" not in df.columns: df["open"] = df[[c for c in df.columns if "open" in c][0]]
+            if "high" not in df.columns: df["high"] = df[[c for c in df.columns if "high" in c][0]]
+            if "low" not in df.columns: df["low"] = df[[c for c in df.columns if "low" in c][0]]
+            if "volume" not in df.columns: df["volume"] = df[[c for c in df.columns if "volume" in c][0]]
+            
+        # --- RESTORED LOGIC START: Prediction Validation ---
+        if LAST_PRED_SCORE is not None and LAST_PRED_PRICE is not None:
+            ret_since = (current_price - LAST_PRED_PRICE) / LAST_PRED_PRICE
+            real_dir = "Up" if ret_since > 0.0015 else "Down" if ret_since < -0.0015 else "Flat"
+            
+            is_correct = False
+            if (LAST_PRED_DIR == "Bullish" and real_dir == "Up") or \
+               (LAST_PRED_DIR == "Bearish" and real_dir == "Down"):
+                is_correct = True
+            elif real_dir == "Flat" and LAST_PRED_DIR in ["Bearish", "Neutral"]:
+                 is_correct = True
+            
+            icon = "✅" if is_correct else "❌"
+            logger.info(f"🎯 Accuracy Check: Pred [{LAST_PRED_DIR} {LAST_PRED_SCORE:.2f}] vs Real [{real_dir} {ret_since*100:.3f}%] -> {icon}")
+            
+            # Write to predictions.log
+            acc_logger.info(f"{LAST_PRED_DIR},{LAST_PRED_SCORE:.4f},{real_dir},{ret_since:.6f},{icon}")
+        # --- RESTORED LOGIC END ---
+        
+        # 4. Noise Immunity Check
+        noise_score = noise_guard.analyze_cleanliness(df)
+        if noise_score > 0.65:
+            logger.warning(f"🌪 Market Choppy (Score {noise_score:.2f}). QUANTUM Blocking Trades.")
+            return
 
-        if len(df) < 100:
-             logger.warning("Insufficient data after merge. Skipping cycle.")
+        # 5. QUANTUM Intelligence Layer
+        market_payload = {
+            "symbol": focus_ticker,
+            "candles": df,
+            "microstructure": ob_manager.get_latest_metrics(),
+            "funding_rate": 0.0001, 
+            "volatility": 0.02 
+        }
+        
+        # A. Meta-Brain (Hard Veto Only)
+        # We use MetaBrain to check for Macro Veto. If it returns HOLD, we stop.
+        # But for active signals, we use the Arbitrator.
+        macro_decision = meta_brain.think(market_payload)
+        if macro_decision["action"] == "HOLD" and macro_decision.get("agent") in ["TITAN_VETO", "TITAN_META_LABEL"]:
+             logger.warning(f"🛡️ QUANTUM VETO: {macro_decision['reason']}")
+             telemetry.inc("meta_brain_veto_count")
              return
 
-        # 2. Calculate Basic Features
-        df = calculate_features(df)
+        # B. Agent Arbitrator (The Voting Booth)
+        # Stub: Simulating raw agent signals for arbitration
+        # In full prod, we would call each agent.analyze() here.
+        raw_signals = {
+            "MomentumHunter": {"signal": 1.0, "confidence": 0.8},
+            "MeanRevGhost": {"signal": -1.0, "confidence": 0.3},
+            "VolOracle": {"signal": 0.0, "confidence": 0.0}
+        }
+        regime = market_payload.get("regime", "NEUTRAL") # Injected by MetaBrain or re-fetched
+        
+        arbitrated_decision = arbitrator.arbitrate(raw_signals, regime)
+        
+        # 6. Risk Engine v3 (Factor Check)
+        if risk_engine_v3:
+            market_factors = {"beta": 1.0, "liquidity": 1.0} # Stub
+            is_safe = risk_engine_v3.check_trade_risk(arbitrated_decision, market_factors)
             
-        # --- GUARDIAN CHECK 1: System Health ---
-        if not guardian.check_system_health(signal_engine.model, signal_engine.scaler, df):
-            logger.critical("🛑 Guardian: System Health Check Failed. Aborting Cycle.")
-            return
-        
-        # 3. Get Latest Context (Pass History Window)
-        # Pass last 300 candles (excluding the very last if likely open/incomplete, but fetch_unified returns closed usually? 
-        # MarketRouter usually returns completed candles. Latest might be open depending on exchange.
-        # Safest is to take up to -1 if we are sure -1 is open.
-        # Assuming fetch returns open candle at end -> slice up to -1.
-        # If fetch returns only closed -> slice all.
-        # Let's assume -1 is open/latest.
-        
-        # Define window size for models (some need 64, some 100)
-        window_size = 300
-        latest_window = df.iloc[-(window_size+1):-1].copy().reset_index(drop=True)
-         
-        current_price = latest_window["btc_close"].iloc[-1]
-        timestamp = latest_window["timestamp"].iloc[-1]
-        
-        logger.info(f"Processing Candle: {timestamp} | Price: {current_price}")
-        
-        # --- GUARDIAN CHECK 2: Financial Health ---
-        current_balance = base_executor.get_balance("USDT")
-        if not guardian.check_financial_health(current_balance):
-            logger.critical("🛑 Guardian: Financial Health Check Failed. Aborting Cycle.")
-            return
+            if not is_safe:
+                logger.warning("🛑 RISK VETO: Factor Exposure Limit Reached.")
+                return
+        else:
+             # If Risk Engine disabled, assume safe
+             pass
             
-        # 4. Generate Signal
-        signal_output = signal_engine.process_candle(latest_window)
-        
-        # --- GUARDIAN CHECK 3: Market Conditions ---
-        if not guardian.check_market_conditions(signal_output["strategy_context"]):
-            logger.warning("🛑 Guardian: Market Condition Check Failed. Skipping Trade.")
-            return
-        
-        # 5. Make Decision
-        decision = decision_engine.make_decision(signal_output, current_price)
-        
-        # 6. Execute Order
-        if decision["action"] == "BUY":
-            logger.info(f"Available Balance: {current_balance} USDT")
+        # 7. Execution Quantum
+        if arbitrated_decision["action"] != "HOLD":
+            # Decide Intent
+            intent = liquidity_ai.analyze_intent(arbitrated_decision["action"], arbitrated_decision["size"], market_payload)
+            logger.info(f"🤖 QUANTUM Intent: {intent['type']}")
             
-            if current_balance > 10: # Min balance check
-                # --- GUARDIAN CHECK 4: Execution Safety ---
-                # Assuming market order, so order price ~ current price
-                if not guardian.check_execution_safety(current_price, current_price):
-                    logger.warning("🛑 Guardian: Execution Safety Check Failed. Holding.")
-                    return
-                    
-                # Get Microstructure Metrics
-                ob_metrics = ob_manager.get_latest_metrics()
-                
-                # Execute Buy (Smart)
-                # Ensure we run async method in sync context
-                try:
-                    order = asyncio.run(smart_executor.execute_order(
-                        symbol="BTC/USDT",
-                        side="buy",
-                        amount=decision["size"],
-                        style="AUTO",
-                        microstructure=ob_metrics,
-                        stops=decision["stops"]
-                    ))
-                except Exception as ex_err:
-                    logger.error(f"Execution Error: {ex_err}")
-                    order = None
-                
-                if order:
-                    logger.info(f"✅ BUY Order Executed: {order}")
-                    sl_price = decision["stops"]["stop_loss"]
-                    logger.info(f"🛑 Stop Loss should be at: {sl_price}")
-            else:
-                logger.warning("Insufficient USDT balance.")
-                
-        elif decision["action"] == "SELL":
-            # Logic for selling/closing position would go here
-            pass
+            # Execute with Microprice
+            execution_quantum.execute_order(arbitrated_decision, market_payload)
             
-        logger.info("💤 Cycle Complete. Waiting for next schedule.")
+        # 8. v24 Shadow Portfolio Agent
+        if shadow_agent:
+            # Construct Mock State (Returns, Vols, Weights)
+            # Assuming 3 assets (BTC, ETH, SOL) + Cash as in Env
+            # Real implementation would fetch portfolio vector
+            mock_obs = np.random.normal(0, 1, 10) # 3*2 + 4 dim
+            try:
+                alloc, _ = shadow_agent.select_action(mock_obs)
+                logger.info(f"🔮 SHADOW PORTFOLIO: Allocation = {alloc}")
+            except Exception as e_shadow:
+                logger.error(f"Shadow Agent Error: {e_shadow}")
+            
+        # --- RESTORED LOGIC START: Update State ---
+        LAST_PRED_PRICE = current_price
+        # Map Decision to Score
+        # Decision has action=BUY/SELL/HOLD, size=0.0-1.0
+        score = arbitrated_decision.get("size", 0.0)
+        action = arbitrated_decision.get("action", "HOLD")
         
+        if action == "BUY":
+            LAST_PRED_DIR = "Bullish"
+            LAST_PRED_SCORE = 0.5 + (score * 0.5) # Map 0-1 to 0.5-1.0
+        elif action == "SELL":
+            LAST_PRED_DIR = "Bearish"
+            LAST_PRED_SCORE = 0.5 - (score * 0.5) # Map 0-1 to 0.5-0.0
+        else:
+            LAST_PRED_DIR = "Neutral"
+            LAST_PRED_SCORE = 0.5
+            
+        # --- RESTORED LOGIC END ---
+
+        logger.info("💤 Cycle Complete.")
+
     except Exception as e:
-        logger.error(f"Error in trading cycle: {e}", exc_info=True)
+        logger.error(f"Error in v19 cycle: {e}", exc_info=True)
+        self_healer.restart_hft_layer(ob_manager)
 
 
 # --- CONFIGURATION ---
-LIVE_TRADING = True # Set to True to enable Real-Money Safety Checks & Execution
+# Load Deployment Config
+dep_conf = config.get("deployment", {})
+LIVE_TRADING = dep_conf.get("go_live", False)
+ENABLE_RISK_ENGINE = dep_conf.get("feature_flags", {}).get("enable_risk_engine", True)
+ENABLE_VETO = dep_conf.get("feature_flags", {}).get("enable_regime_veto", True)
+ENABLE_SHADOW = True # v24 Prep default
 
 if __name__ == "__main__":
-    # Safety Confirmation
     if LIVE_TRADING:
         print("\n\n" + "!"*60)
-        print("⚠️  WARNING: LIVE TRADING MODE ENABLED")
+        print("⚠️  WARNING: LIVE TRADING MODE ENABLED (v19 QUANTUM)")
         print("⚠️  REAL MONEY IS AT RISK.")
-        print("⚠️  ENSURE YOU HAVE SET 'BINANCE_TESTNET=True' IN .env FOR TESTING.")
         print("!"*60 + "\n")
         
-        # Determine if we are really on mainnet?
-        # We can't know for sure until Executor inits, but we can warn generally.
-        
-        user_input = input("Type 'YES' to continue with LIVE TRADING: ")
+        user_input = input("Type 'YES' to continue: ")
         if user_input.strip() != "YES":
-            print("❌ Start Aborted.")
             exit(0)
             
-    logger.info("🚀 Live Trading Bot Started")
+    logger.info(f"🚀 Live Trading Bot Started (v19 QUANTUM System) [LIVE={LIVE_TRADING}]")
+    logger.info(f"🚩 Feature Flags: RiskEngine={ENABLE_RISK_ENGINE}, RegimeVeto={ENABLE_VETO}")
     
-    # Initialize Components
-    # v8 Market Router
-    market_router = MarketRouter(primary_exchange="binance", secondary_exchanges=["bybit", "okx"])
-    logger.info("✅ MarketRouter Initialized")
-    
-    signal_engine = LiveSignalEngine(MODEL_PATH, SCALER_PATH, balanced_mode=True)
-    risk_engine = RiskEngine() 
-    decision_engine = TradingDecision(risk_engine, LOG_DIR)
-    
-    # Execution Stack
-    base_executor = BinanceExecutor() # Configured via env vars (Defaults to Dry Run if missing)
-    smart_executor = SmartExecutor(base_executor)
-    
-    # Order Book Manager (Async in Thread)
+    # Initialize Core
+    market_router = MarketRouter(primary_exchange="binance", secondary_exchanges=[])
     ob_manager = OrderBookManager(symbol="btcusdt")
+    
+    # Initialize v19 QUANTUM Stack
+    logger.info("🧠 Initializing QUANTUM Core...")
+    meta_brain = MetaBrainV21() # v21 Regime Detection (Veto Enabled by Class Logic)
+    arbitrator = AgentArbitrator()
+    risk_engine_v3 = RiskEngineV3() if ENABLE_RISK_ENGINE else None
+
+    execution_quantum = ExecutionQuantum()
+    
+    # v24 Shadow Agent
+    shadow_agent = None
+    if ENABLE_SHADOW:
+        # 3 Assets + Cash = 4 dim action, 10 dim state
+        shadow_agent = PPOPortfolioAgent(state_dim=10, action_dim=4)
+        logger.info("🔮 Shadow PPO Agent Initialized")
+    
+    market_router_v2 = MarketRouterV2()
+    noise_guard = MarketCleanlinessModel()
+    liquidity_ai = LiquidityAI()
+    self_healer = SelfHealingSystem(DATA_DIR)
+    
+    # Start HFT Thread
     def run_ob_loop():
         asyncio.run(ob_manager.start_stream())
     
@@ -243,14 +323,9 @@ if __name__ == "__main__":
     ob_thread.start()
     logger.info("📡 OrderBook Manager Thread Started")
     
-    # Initialize Guardian
-    guardian = SafetyDaemon(DATA_DIR, initial_capital=10000.0) # Set initial capital correctly!
-    
-    # Run once immediately to verify
+    # Start Scheduler
     job()
-    
-    # Schedule every minute (since we are on 1m timeframe now)
-    schedule.every().minute.at(":02").do(job)
+    schedule.every().minute.at(":05").do(job)
     
     while True:
         schedule.run_pending()

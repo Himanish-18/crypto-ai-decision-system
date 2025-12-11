@@ -1,8 +1,10 @@
 import asyncio
 import json
 import logging
+import time
 import pandas as pd
 import numpy as np
+import threading
 from datetime import datetime, timezone
 import websockets
 from typing import Dict, Optional, List
@@ -26,7 +28,22 @@ class OrderBookManager:
         self.data_dir = Path(__file__).resolve().parents[2] / "data" / "features"
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.parquet_path = self.data_dir / "orderbook_features.parquet"
+        self.parquet_path = self.data_dir / "orderbook_features.parquet"
         self.history: List[Dict] = []
+        
+        # Market Pulse State
+        self.last_pulse_ts = 0
+        self.last_pulse_price = None
+        
+        # HFT Listeners (Data Wiring)
+        self.listeners = []
+        
+        # Persistence Logic
+        self.total_updates = 0
+        self.lock = threading.Lock() # Fix Race Condition
+        
+    def register_listener(self, callback):
+        self.listeners.append(callback)
         
     async def start_stream(self):
         """Start the WebSocket stream."""
@@ -43,8 +60,8 @@ class OrderBookManager:
                         data = json.loads(msg)
                         self._process_depth_update(data)
                         
-                        # Periodically save to parquet (e.g., every 100 updates or logic driven)
-                        if len(self.history) % 100 == 0 and len(self.history) > 0:
+                        # Periodically save to parquet (updates-based, not length-based)
+                        if self.total_updates % 100 == 0 and self.total_updates > 0:
                             self.save_features()
                             
             except Exception as e:
@@ -71,6 +88,13 @@ class OrderBookManager:
             
             if len(bids) == 0 or len(asks) == 0:
                 return
+
+            # Notify Listeners (HFT Wiring)
+            for listener in self.listeners:
+                try:
+                    listener(bids, asks)
+                except Exception as e:
+                    logger.error(f"Listener error: {e}")
 
             # Sort just in case (Bids desc, Asks asc)
             # Binance stream usually ordered, but safe to valid
@@ -138,7 +162,23 @@ class OrderBookManager:
             # 5. Liquidity Ratio (Bids vs Asks total visible)
             total_bid_liq = np.sum(bids[:, 1])
             total_ask_liq = np.sum(asks[:, 1])
+            total_bid_liq = np.sum(bids[:, 1])
+            total_ask_liq = np.sum(asks[:, 1])
             liquidity_ratio = total_bid_liq / (total_ask_liq + 1e-9)
+            
+            # --- Market Pulse Logger (Every 1s) ---
+            now_ts = time.time()
+            if now_ts - self.last_pulse_ts >= 1.0:
+                if self.last_pulse_price is not None:
+                    delta = mid_price - self.last_pulse_price
+                    direction = "⬆️" if delta > 0 else "⬇️" if delta < 0 else "➡️"
+                    color_icon = "🟢" if delta > 0 else "🔴" if delta < 0 else "⚪"
+                    
+                    # Log only if there is legitimate connection/activity
+                    logger.info(f"{color_icon} Pulse: {mid_price:.2f} | {direction} {delta:+.2f} USD")
+                
+                self.last_pulse_price = mid_price
+                self.last_pulse_ts = now_ts
             
             metrics = {
                 "timestamp": timestamp,
@@ -152,11 +192,13 @@ class OrderBookManager:
             }
             
             self.metrics = metrics
-            self.history.append(metrics)
             
-            # Trim history in memory
-            if len(self.history) > 10000:
-                self.history = self.history[-10000:]
+            with self.lock:
+                self.history.append(metrics)
+                # Trim history in memory
+                if len(self.history) > 10000:
+                    self.history = self.history[-10000:]
+                self.total_updates += 1
                 
         except Exception as e:
             logger.error(f"Error processing depth: {e}")
@@ -168,11 +210,18 @@ class OrderBookManager:
     def save_features(self):
         """Dump history to parquet."""
         try:
-            if not self.history:
-                return
-            df = pd.DataFrame(self.history)
+            # Snapshot with Lock
+            with self.lock:
+                if not self.history:
+                    return
+                data_snapshot = list(self.history)
+                snap_len = len(data_snapshot)
+            
+            logger.info(f"💾 Saving Snapshot: {snap_len} records")
+            
+            # Save outside lock to avoid blocking HFT loop
+            df = pd.DataFrame(data_snapshot)
             df.to_parquet(self.parquet_path)
-            # logger.info(f"💾 Saved {len(df)} OB records to {self.parquet_path}")
         except Exception as e:
             logger.error(f"Failed to save features: {e}")
 

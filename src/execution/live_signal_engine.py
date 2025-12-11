@@ -35,6 +35,9 @@ from src.execution.hedge_manager import HedgeManager
 from src.intelligence.arbitrage_scanner import ArbitrageScanner
 from src.data.deribit_vol_monitor import DeribitVolMonitor
 from src.risk_engine.iv_guard import IVGuard
+# v19 ML Imports
+from src.ml.stacker_pipeline import StackingEnsemble
+from src.ml.model_failure import ModelFailureDetector
 
 # Setup Logging
 logger = logging.getLogger("live_engine")
@@ -88,6 +91,12 @@ class LiveSignalEngine:
         self.news_agg = NewsAggregator()
         self.news_model = NewsSentimentModel()
         
+        # v14 HFT Execution Layer (Institutional Upgrade)
+        from src.execution.hft.orderbook import WebSocketOrderBook
+        from src.execution.hft.router import SmartOrderRouter
+        self.hft_ob_v2 = WebSocketOrderBook()
+        self.sor = SmartOrderRouter()
+        
         self.cache_dir = self.model_path.parent.parent / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
@@ -119,6 +128,21 @@ class LiveSignalEngine:
         
         # Hot-Swap State
         self.last_model_load_time = 0
+        
+        # Validation State
+        self.last_pred_score = None
+        self.last_pred_price = None
+        
+        # Dedicated Accuracy Logger
+        self.acc_logger = logging.getLogger("accuracy_monitor")
+        self.acc_logger.setLevel(logging.INFO)
+        # Prevent duplicate handlers
+        if not self.acc_logger.handlers:
+            handler = logging.FileHandler("predictions.log")
+            formatter = logging.Formatter('%(asctime)s,%(message)s')
+            handler.setFormatter(formatter)
+            self.acc_logger.addHandler(handler)
+        
         self.load_artifacts()
         
     def load_hybrid_models(self):
@@ -143,9 +167,27 @@ class LiveSignalEngine:
             else:
                 self.xgb_stacker = None
                 logger.warning("⚠️ v5 Stacker not found. Defaulting to fallback.")
+            
+            # v19 ML Load
+            self.load_v19_models()
                 
         except Exception as e:
             logger.warning(f"⚠️ Failed to load Hybrid v5 Models: {e}. Falling back to standard.")
+
+    def load_v19_models(self):
+        # Assumes model_path is in data/models/
+        root = self.model_path.parent / "v19"
+        self.v19_stacker = None
+        self.v19_failure_detector = None
+        try:
+            if (root / "meta_stacker.pkl").exists():
+                self.v19_stacker = StackingEnsemble.load(root / "meta_stacker.pkl")
+                logger.info("🧠 v19 Meta-Stacker Loaded.")
+            if (root / "model_failure.pkl").exists():
+                self.v19_failure_detector = ModelFailureDetector.load(root / "model_failure.pkl")
+                logger.info("🛡️ v19 Model Failure Detector Loaded.")
+        except Exception as e:
+            logger.error(f"Failed to load v19 models: {e}")
 
     def load_artifacts(self):
         """Load model and scaler."""
@@ -224,6 +266,36 @@ class LiveSignalEngine:
             candle_data.tail(100).to_parquet(snapshot_path)
         except Exception as e:
             logger.warning(f"Cache Write Failed: {e}")
+
+        # --- PREDICTION VALIDATOR (v7.4) ---
+        # --- PREDICTION VALIDATOR (v7.5: Noise Aware) ---
+        current_price = candle_data["btc_close"].iloc[-1]
+        if self.last_pred_score is not None and self.last_pred_price is not None:
+            ret_since_last = (current_price - self.last_pred_price) / self.last_pred_price
+            
+            # Interpretation (Noise Threshold 0.15%)
+            pred_dir = "Bullish" if self.last_pred_score > 0.55 else "Bearish" if self.last_pred_score < 0.45 else "Neutral"
+            real_dir = "Up" if ret_since_last > 0.0015 else "Down" if ret_since_last < -0.0015 else "Flat"
+            
+            is_correct = False
+            # Logic:
+            # 1. Direction Match (Bull/Up, Bear/Down)
+            # 2. Safety Success: Market Flat + Model Bearish/Neutral (Good, we didn't trade)
+            
+            if (pred_dir == "Bullish" and real_dir == "Up") or \
+               (pred_dir == "Bearish" and real_dir == "Down"):
+                is_correct = True
+            elif real_dir == "Flat" and pred_dir in ["Bearish", "Neutral"]:
+                 is_correct = True # Avoided Chop
+                 
+            icon = "✅" if is_correct else "❌"
+            
+            log_msg = f"🎯 Accuracy Check: Pred [{pred_dir} {self.last_pred_score:.2f}] vs Real [{real_dir} {ret_since_last*100:.3f}%] -> {icon}"
+            logger.info(log_msg)
+            
+            # CSV Log
+            csv_msg = f"{pred_dir},{self.last_pred_score:.4f},{real_dir},{ret_since_last:.6f},{icon}"
+            self.acc_logger.info(csv_msg)
 
         # 1. v7 Feature Engineering (Sentiment + OrderFlow)
         candle_data = self.sentiment_gen.calculate_proxies(candle_data)
@@ -327,6 +399,44 @@ class LiveSignalEngine:
                     mf_score = stacker_prob
                 except Exception as e:
                     logger.error(f"Stacker Inference Error: {e}")
+
+            # 4. v19 Stacker & Failure Gate
+            if self.v19_stacker:
+                try:
+                    # Mocking inputs for v19 stacker (using v5 outputs as base)
+                    # In real prod, these would be the exact same feature names used in training
+                    X_v19 = pd.DataFrame([[cnn_score, tcn_score]], columns=["xgb_prob", "lgbm_prob"])
+                    
+                    # Predict [1-p, p]
+                    v19_prob_vec = self.v19_stacker.predict_proba(X_v19)
+                    v19_prob = v19_prob_vec[0, 1]
+                    logger.info(f"🔮 v19 Stacker Probability: {v19_prob:.4f}")
+                    
+                    # Update Main Prob
+                    prob = v19_prob
+                    mf_score = v19_prob
+                    
+                    # Failure Check
+                    if self.v19_failure_detector:
+                        # Context: Volatility
+                        vol_feat = volatility 
+                        fail_prob = self.v19_failure_detector.predict_failure_prob({"volatility": vol_feat})
+                        logger.info(f"🛡️ v19 Model Failure Prob: {fail_prob:.4f}")
+                        
+                        if fail_prob > 0.25:
+                            logger.warning(f"⛔ v19 Failure Guard Veto: P(Fail) {fail_prob:.2f} > 0.25")
+                            return {
+                                "timestamp": candle_data["timestamp"].iloc[-1],
+                                "signal": 0,
+                                "block_reason": f"v19 Failure Guard (P={fail_prob:.2f})",
+                                "strategy_context": context,
+                                "prediction_prob": 0.0,
+                                "execution_mode": "MAKER",
+                                "ppo_size_scalar": 0.0
+                            }
+                            
+                except Exception as e:
+                    logger.error(f"v19 Inference Error: {e}")
 
             # 4. v6 Intelligence Layer
             # A. Kalman Smoothing
@@ -559,17 +669,31 @@ class LiveSignalEngine:
         block_reason = None
         execution_mode = "MAKER"
         
-        # v10 Execution Logic: Fill Probability
-        # Determine Execution Mode based on Fill Prob
-        # Assume we want to buy at best bid?
-        imb = self.hft_ob.get_imbalance()
-        fill_prob = self.fill_prob_model.estimate_fill_prob("buy", 0, 0, imb, volatility)
-        logger.info(f"⚡ Fill Prob: {fill_prob:.2f}")
+        # v14 HFT Smart Order Routing
+        # Determine Execution Mode (Maker/Taker) using SOR
         
-        if fill_prob > 0.6:
-            execution_mode = "MAKER"
+        # Build SOR Context
+        sor_context = {
+            "ob_imbalance": float(self.hft_ob_v2.get_imbalance()), # Uses v2 OB
+            "volatility": float(volatility),
+            "spread": 0.0001 # TODO: Get from HB OB
+        }
+        
+        # Urgency: High if TrendDepth is extreme or Model > 0.8
+        urgency = "NORMAL"
+        if td_score > 0.8 or smooth_score > 0.8:
+            urgency = "HIGH"
+            
+        routing_decision = self.sor.route_order("buy", 1.0, sor_context, urgency)
+        execution_mode = routing_decision["type"] # LIMIT -> MAKER, MARKET -> TAKER
+        logger.info(f"⚡ SOR Decision: {execution_mode} (Urg={urgency}, Vol={volatility:.4f})")
+        
+        if execution_mode == "LIMIT":
+            execution_mode = "MAKER" # Map to system standard
         else:
             execution_mode = "TAKER"
+            
+        # 2. Trend Depth Modifiers (v6.1 Recalibrated)
         
         # 2. Trend Depth Modifiers (v6.1 Recalibrated)
         effective_threshold = adaptive_thresh
@@ -643,6 +767,8 @@ class LiveSignalEngine:
 
         if final_signal == 1:
             logger.info(f"✅ SIGNAL GENERATED: Score {smooth_score:.4f} | Size: {size_scalar:.2f}x | Exec: {execution_mode}")
+            self.last_pred_score = float(smooth_score)
+            self.last_pred_price = float(candle_data["btc_close"].iloc[-1])
             return {
                 "timestamp": candle_data["timestamp"].iloc[-1],
                 "prediction_prob": float(smooth_score),
@@ -653,6 +779,8 @@ class LiveSignalEngine:
                 "ppo_size_scalar": float(size_scalar)
             }
         else:
+            self.last_pred_score = float(smooth_score)
+            self.last_pred_price = float(candle_data["btc_close"].iloc[-1])
             return {
                 "timestamp": candle_data["timestamp"].iloc[-1],
                 "signal": 0,
