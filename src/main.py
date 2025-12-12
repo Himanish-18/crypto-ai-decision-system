@@ -72,8 +72,8 @@ ml_model = None
 dot_model = None
 # Fix: Init DOT Model
 try:
-    from src.features.orderflow_features import OrderFlowTransformer
-    dot_model = OrderFlowTransformer()
+    from src.features.orderflow import OrderFlowFeatures
+    dot_model = OrderFlowFeatures()
     logger.info("🧠 DOT Model Initialized.")
 except Exception as e:
     logger.warning(f"DOT Init Failed: {e}")
