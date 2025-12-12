@@ -1,19 +1,20 @@
-data_path: "./data/"
-symbols: ["BTC/USDT", "ETH/USDT"]
-timeframe: "1h"
-record_limit: 1000
-
-sources:
-  rss:
-    - "https://news.google.com/rss/search?q=bitcoin"
-    - "https://news.google.com/rss/search?q=ethereum"
-  cryptocompare: "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
-  coinstats: "https://api.coinstats.app/public/v1/news/latest?skip=0&limit=50"
-
-logging_level: "INFO"
-
+data_path: ./data/
 deployment:
-  go_live: false
   feature_flags:
-    enable_risk_engine: true
+    disable_dot: false
+    disable_ml: false
     enable_regime_veto: true
+    enable_risk_engine: true
+  go_live: false
+logging_level: INFO
+record_limit: 1000
+sources:
+  coinstats: https://api.coinstats.app/public/v1/news/latest?skip=0&limit=50
+  cryptocompare: https://min-api.cryptocompare.com/data/v2/news/?lang=EN
+  rss:
+  - https://news.google.com/rss/search?q=bitcoin
+  - https://news.google.com/rss/search?q=ethereum
+symbols:
+- BTC/USDT
+- ETH/USDT
+timeframe: 1h
