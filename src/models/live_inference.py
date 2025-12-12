@@ -1,11 +1,13 @@
-import joblib
-import pandas as pd
-import numpy as np
+import logging
 from pathlib import Path
 from typing import Dict
-import logging
+
+import joblib
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger("live_inference")
+
 
 class LiveInferenceEngine:
     def __init__(self, models_dir: str = "./models"):
@@ -36,35 +38,44 @@ class LiveInferenceEngine:
         # cvd_1h -> cvd_10s (scaled proxy)
         # vwap_deviation -> (mid - micro) / mid (proxy)
         # rsi -> 50 (neutral placeholder if not computed)
-        
-        # Note: In a real system, we need exact feature parity. 
+
+        # Note: In a real system, we need exact feature parity.
         # Here we map available live features to model inputs.
-        
+
         # Mock Regime Prediction (needs history, here we use placeholder or simple logic)
         # For simplicity in this live tick loop, we assume a regime or use a simple heuristic
         # Real implementation would maintain a history buffer to feed HMM.
-        current_regime = 1 # Assume 'Trend' for now
-        
-        input_features = pd.DataFrame([{
-            'order_imbalance_10': features.get("ofi", 0), # OFI is similar concept
-            'cvd_1h': features.get("cvd_10s", 0),
-            'vwap_deviation': (features.get("mid_price", 0) - features.get("microprice", 0)) / features.get("mid_price", 1),
-            'rsi': 50.0, # Placeholder
-            'regime': current_regime
-        }])
-        
+        current_regime = 1  # Assume 'Trend' for now
+
+        input_features = pd.DataFrame(
+            [
+                {
+                    "order_imbalance_10": features.get(
+                        "ofi", 0
+                    ),  # OFI is similar concept
+                    "cvd_1h": features.get("cvd_10s", 0),
+                    "vwap_deviation": (
+                        features.get("mid_price", 0) - features.get("microprice", 0)
+                    )
+                    / features.get("mid_price", 1),
+                    "rsi": 50.0,  # Placeholder
+                    "regime": current_regime,
+                }
+            ]
+        )
+
         prob = self.ensemble_model.predict_proba(input_features)[0]
-        
+
         # Regime Logic
         # If Mean Reversion (Regime 0), fade the signal or use different threshold
         # If Trend (Regime 1), follow signal
-        
+
         direction = 1 if prob > 0.6 else (-1 if prob < 0.4 else 0)
         confidence = abs(prob - 0.5) * 2
-        
+
         return {
             "probability": prob,
             "direction": direction,
             "confidence": confidence,
-            "regime": current_regime
+            "regime": current_regime,
         }

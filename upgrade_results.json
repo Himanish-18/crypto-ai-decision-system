@@ -2,37 +2,37 @@
   {
     "version": "v19_Quantum_Stacker",
     "status": "PASS",
-    "duration": 0.08902716636657715,
-    "output": "\n==================================================\n\u269b\ufe0f v19 QUANTUM System Testbench\n==================================================\n\n1. Initializing Quantum Core...\n\u2705 Initialization Complete.\n\n2. Testing Multi-Agent Voting (Regime: NEUTRAL)...\n   Result: {'action': 'HOLD', 'size': 0.17, 'agent': 'ARBITRATOR_v19', 'reason': 'Weighted Vote (NEUTRAL)'}\n\n   Testing Regime Switch (RISK_ON)...\n   Result: {'action': 'BUY', 'size': 0.5, 'agent': 'ARBITRATOR_v19', 'reason': 'Weighted Vote (RISK_ON)'}\n\n3. Testing Risk Factor Check...\n   Trade Safe? True\n   Low Liq Trade Safe? False\n\n4. Testing Microprice Execution...\n\n\u2705 QUANTUM Testbench Passed.\n"
+    "duration": 0.6347451210021973,
+    "output": "\n==================================================\n\u269b\ufe0f v19 QUANTUM System Testbench\n==================================================\n\n1. Initializing Quantum Core...\n\u2705 Initialization Complete.\n\n2. Testing Multi-Agent Voting (Regime: NEUTRAL)...\n   Result: {'action': 'HOLD', 'size': 0.5111111111111112, 'agent': 'ARBITRATOR_v46', 'reason': 'DynamicArbitration(Vol=0.0100, Norm=0.44)'}\n\n   Testing Regime Switch (RISK_ON)...\n   Result: {'action': 'HOLD', 'size': 0.5111111111111112, 'agent': 'ARBITRATOR_v46', 'reason': 'DynamicArbitration(Vol=0.0100, Norm=0.44)'}\n\n3. Testing Risk Factor Check...\n   Trade Safe? True\n   Low Liq Trade Safe? False\n\n4. Testing Microprice Execution...\n\n\u2705 QUANTUM Testbench Passed.\n"
   },
   {
     "version": "v20_Risk_Engine",
     "status": "PASS",
-    "duration": 0.36946702003479004,
-    "output": "Scenario Results: {'crypto_crash_10': -5000.0, 'crypto_crash_20': -10000.0, 'crypto_meltup_10': 5000.0, 'funding_shock': 0.0}\nVaR 99: 0.0276\n"
+    "duration": 0.34494709968566895,
+    "output": "Scenario Results: {'crypto_crash_10': -5000.0, 'crypto_crash_20': -10000.0, 'crypto_meltup_10': 5000.0, 'funding_shock': 0.0}\nVaR 99: 0.0305\n"
   },
   {
     "version": "v21_Regime_Detection",
     "status": "PASS",
-    "duration": 2.268779754638672,
-    "output": "DEBUG: src.decision.meta_brain_v21 MODULE LOADED\nDEBUG: MetaBrainV21 source: <class 'src.decision.meta_brain_v21.MetaBrainV21'>\nDEBUG: v21 think called. market_data keys: dict_keys(['candles', 'regime', 'action'])\nSafe Decision: {'action': 'BUY', 'size': 0.1875, 'agent': 'FlowReaper', 'reason': 'Selected FlowReaper (Conf 0.75)'}\nDEBUG: v21 think called. market_data keys: dict_keys(['candles', 'regime'])\nRisk Decision: {'action': 'HOLD', 'confidence': 1.0, 'veto_reason': 'REGIME_RISK', 'regime_info': {'hmm_state': 1, 'hmm_prob': np.float64(1.0), 'xgb_prob': np.float32(0.98622453)}, 'agent': 'V21_REGIME'}\n"
+    "duration": 1.7076008319854736,
+    "output": "DEBUG: MetaBrainV21 source: <class 'src.decision.meta_brain_v21.MetaBrainV21'>\nSafe Decision: {'action': 'BUY', 'size': 0.1875, 'agent': 'FlowReaper', 'reason': 'Selected FlowReaper (Conf 0.75)'}\nRisk Decision: {'action': 'HOLD', 'confidence': 1.0, 'veto_reason': 'REGIME_RISK', 'regime_info': {'hmm_state': 0, 'hmm_prob': np.float64(1.3945940438884473e-183), 'xgb_prob': np.float32(0.985556)}, 'agent': 'V21_REGIME'}\n"
   },
   {
     "version": "v22_Execution_Logic",
     "status": "PASS",
-    "duration": 0.06533217430114746,
+    "duration": 0.06334996223449707,
     "output": "Prob Adverse: 0.43\nProb Favorable: 0.79\nRoute 1 (High Vol/Bad OBI): MARKET\n  Sliced correctly.\nRoute 2 (Calm/Good OBI): LIMIT\nSim Result: {'fill_rate': 1.0, 'avg_slippage_bp': np.float64(-24.93765586034913), 'fills': [{'order': {'side': 'BUY', 'price': 100.0, 'qty': 0.1, 'type': 'LIMIT'}, 'fill_price': 100.0, 'time': 3}]}\n"
   },
   {
     "version": "v23_Portfolio_RL_Unit",
     "status": "PASS",
-    "duration": 1.236422061920166,
+    "duration": 1.375882863998413,
     "output": ""
   },
   {
     "version": "v23_Portfolio_RL_Backtest",
     "status": "PASS",
-    "duration": 1.0824508666992188,
+    "duration": 1.069807767868042,
     "output": "\ud83d\ude80 Running v23 Portfolio Backtest...\n"
   }
 ]

@@ -1,12 +1,16 @@
 import asyncio
 import logging
-from src.ingest.l2_stream import L2Stream
-from src.features.microstructure_features import MicrostructureFeatures
-from src.models.live_inference import LiveInferenceEngine
-from src.execution.micro_execution import MicroExecution
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from src.execution.micro_execution import MicroExecution
+from src.features.microstructure_features import MicrostructureFeatures
+from src.ingest.l2_stream import L2Stream
+from src.models.live_inference import LiveInferenceEngine
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger("main_l2")
+
 
 class CryptoAlphaSystem:
     def __init__(self):
@@ -27,12 +31,13 @@ class CryptoAlphaSystem:
 
         # 2. Inference
         signal = self.inference_engine.predict(features)
-        
+
         # 3. Execution
         await self.execution_engine.execute(signal, snapshot)
-        
+
         # 4. Maintenance (Cancel Stale Orders)
         await self.execution_engine.cancel_stale_orders()
+
 
 if __name__ == "__main__":
     system = CryptoAlphaSystem()

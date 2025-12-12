@@ -1,10 +1,13 @@
-import streamlit as st
-import pandas as pd
 import json
-from pathlib import Path
 import time
+from pathlib import Path
 
-st.set_page_config(page_title="Crypto AI Autonomous Brain", layout="wide", page_icon="🧠")
+import pandas as pd
+import streamlit as st
+
+st.set_page_config(
+    page_title="Crypto AI Autonomous Brain", layout="wide", page_icon="🧠"
+)
 
 st.title("🧠 Crypto AI Autonomous Brain (v8)")
 
@@ -19,7 +22,7 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.metric("Operator Mode", "Autonomous", delta="Verify")
-    
+
 with col2:
     # Check if process running? (Simplistic check via log update time)
     if LOG_FILE.exists():
@@ -39,9 +42,9 @@ st.header("2. Active Model Intelligence")
 metrics_file = MODELS_PROD / "current_metrics.json"
 
 if metrics_file.exists():
-    with open(metrics_file, 'r') as f:
+    with open(metrics_file, "r") as f:
         m = json.load(f)
-    
+
     m_col1, m_col2, m_col3, m_col4 = st.columns(4)
     m_col1.metric("Profit Factor", f"{m.get('profit_factor', 0):.2f}")
     m_col2.metric("Max Drawdown", f"{m.get('max_drawdown', 0)*100:.1f}%")
@@ -54,8 +57,8 @@ else:
 st.header("3. Live Operations Log")
 if LOG_FILE.exists():
     with open(LOG_FILE, "r") as f:
-        lines = f.readlines()[-20:] # Last 20 lines
-        
+        lines = f.readlines()[-20:]  # Last 20 lines
+
     for line in reversed(lines):
         st.caption(line.strip())
 else:

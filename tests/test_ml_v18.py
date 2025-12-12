@@ -1,11 +1,14 @@
 import unittest
-import torch
-import pandas as pd
+
 import numpy as np
-from src.ml.uncertainty import UncertaintyEngine
-from src.ml.meta_label_v2 import TripleBarrierLabeler, LossProbabilityModelV2
+import pandas as pd
+import torch
+
 from src.ml.adversarial import AdversarialRobustness
+from src.ml.meta_label_v2 import LossProbabilityModelV2, TripleBarrierLabeler
 from src.ml.moe_router import MoERouter
+from src.ml.uncertainty import UncertaintyEngine
+
 
 class TestMLv18(unittest.TestCase):
     def test_uncertainty_engine(self):
@@ -15,7 +18,12 @@ class TestMLv18(unittest.TestCase):
         eng = UncertaintyEngine(model, n_passes=5)
         x = torch.randn(1, 10)
         mean, epi, ale = eng.predict_with_uncertainty(x)
-        print(f"Mean: {mean:.4f}, Epistemic: {epi:.4f}")
+        print(f"Mean: {mean}, Epistemic: {epi}")
+        
+        if np.isnan(mean):
+            print(f"DEBUG: Model prediction returned NaN. Input x: {x}")
+            print(f"DEBUG: Model weights: {list(model.parameters())}")
+        
         self.assertIsInstance(mean, float)
         self.assertGreaterEqual(epi, 0.0)
 
@@ -23,12 +31,12 @@ class TestMLv18(unittest.TestCase):
         print("\nTesting Triple Barrier Labeling...")
         dates = pd.date_range("2023-01-01", periods=100, freq="1min")
         prices = pd.Series(np.random.normal(100, 1, 100).cumsum(), index=dates)
-        
+
         lbl = TripleBarrierLabeler(time_limit=10)
         labels = lbl.get_labels(prices)
         print(f"Labels Generated: {labels.value_counts().to_dict()}")
         self.assertEqual(len(labels), 100)
-        
+
     def test_adversarial_check(self):
         print("\nTesting Adversarial Robustness...")
         adv = AdversarialRobustness()
@@ -42,10 +50,11 @@ class TestMLv18(unittest.TestCase):
         router = MoERouter()
         res = router.route_predict("RISK_ON", None)
         print(f"Expert: {res['expert']}, Signal: {res['signal']}")
-        self.assertEqual(res['expert'], "TrendFollower")
-        
-        res2 = router.route_predict("LIQ_CRUNCH", None)
-        self.assertEqual(res2['expert'], "ShortSeller")
+        self.assertEqual(res["expert"], "TrendFollower")
 
-if __name__ == '__main__':
+        res2 = router.route_predict("LIQ_CRUNCH", None)
+        self.assertEqual(res2["expert"], "ShortSeller")
+
+
+if __name__ == "__main__":
     unittest.main()

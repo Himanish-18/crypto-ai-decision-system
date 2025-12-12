@@ -1,0 +1,1 @@
+Root Cause: "Always Neutral (0.50)" was caused by a severed connection between the trading loop (`main.py`) and the ML models (`multifactor_model`, `OrderflowTransformer`). The system was running on a hardcoded "stub" arbitrator logic that bypassed feature calculation and model inference, combined with an incompatible legacy model artifact (`No module named src`).

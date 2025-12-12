@@ -1,0 +1,37 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/soumyadebtripathy/crypto-ai-decision-system
+plugins: anyio-4.11.0, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 31 items
+
+test_alpha_upgrade.py .                                                  [  3%]
+test_plot.py .                                                           [  6%]
+test_risk_hardening.py .                                                 [  9%]
+tests/test_correlation_guard.py ..                                       [ 16%]
+tests/test_execution_v22.py ...                                          [ 25%]
+tests/test_l2_pipeline.py ...                                            [ 35%]
+tests/test_loss_guard.py .                                               [ 38%]
+tests/test_ml_v18.py ....                                                [ 51%]
+tests/test_portfolio_env.py ...                                          [ 61%]
+tests/test_portfolio_risk.py ...                                         [ 70%]
+tests/test_ppo_memory.py ..                                              [ 77%]
+tests/test_regime_v21.py .                                               [ 80%]
+tests/test_sentiment_fallback.py ..                                      [ 87%]
+tests/test_v24_alpha.py ....                                             [100%]
+
+=============================== warnings summary ===============================
+test_alpha_upgrade.py::test_alpha_upgrade
+  /Users/soumyadebtripathy/crypto-ai-decision-system/test_alpha_upgrade.py:45: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
+    dates = pd.date_range(start="2024-01-01", periods=100, freq="H")
+
+tests/test_v24_alpha.py::TestV24Alpha::test_calibration
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sklearn/calibration.py:330: FutureWarning: The `cv='prefit'` option is deprecated in 1.6 and will be removed in 1.8. You can use CalibratedClassifierCV(FrozenEstimator(estimator)) instead.
+    warnings.warn(
+
+tests/test_v24_alpha.py::TestV24Alpha::test_meta_failure
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sklearn/utils/validation.py:2749: UserWarning: X does not have valid feature names, but RandomForestClassifier was fitted with feature names
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 31 passed, 3 warnings in 3.07s ========================

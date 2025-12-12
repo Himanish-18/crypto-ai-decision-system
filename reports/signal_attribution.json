@@ -1,0 +1,17 @@
+{
+    "meta_model_weights": {
+        "DeepOrderflowTransformer": 0.35,
+        "VolLSTM": 0.20,
+        "MeanReversion_XGB": 0.25,
+        "Momentum_TCN": 0.20
+    },
+    "regime_attribution": {
+        "LOW_VOL": "MeanReversion_XGB",
+        "HIGH_VOL": "VolLSTM",
+        "TRENDING": "DeepOrderflowTransformer"
+    },
+    "alpha_decay": {
+        "half_life_ticks": 1200,
+        "decay_rate": 0.0005
+    }
+}

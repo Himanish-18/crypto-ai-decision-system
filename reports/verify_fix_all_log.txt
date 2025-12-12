@@ -1,0 +1,11 @@
+INFO:fix_all_verifier:🛠️ Verifying Fix-All Patch Modules...
+INFO:fix_all_verifier:✅ src.ml.validation.walk_forward
+INFO:fix_all_verifier:✅ src.ml.validation.time_splitter
+INFO:fix_all_verifier:✅ src.ml.validation.regime_validation
+INFO:fix_all_verifier:✅ src.analytics.performance
+INFO:fix_all_verifier:✅ src.ops.observability.drift_detector
+INFO:fix_all_verifier:✅ src.ops.observability.latency_monitor
+INFO:fix_all_verifier:✅ src.risk.institutional_v25.pca_model
+INFO:fix_all_verifier:✅ src.backtest.slippage_model_v2
+INFO:fix_all_verifier:✅ src.backtest.market_impact
+INFO:fix_all_verifier:🎉 All Patch Modules Verified.

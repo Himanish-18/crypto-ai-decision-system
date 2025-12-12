@@ -1,0 +1,21 @@
+{
+  "root_cause": "Model Disconnection & Loading Error",
+  "fixes_applied": [
+    "Retrained multifactor_model (v2) using CalibratedClassifierCV on synthetic features.",
+    "Calculated live features inside main.py job loop.",
+    "Wired multifactor_model_v2 and OrderflowTransformer (DOT) into Arbitrator logic.",
+    "Refactored torch/joblib imports to global scope to fix runtime errors."
+  ],
+  "model_artifact": "data/models/multifactor_model_v2.pkl",
+  "metrics": {
+    "calibration": "Isotonic",
+    "verification_status": "PASS",
+    "signals_captured": [
+      "MomentumHunter",
+      "MeanRevGhost",
+      "ML_Ensemble",
+      "DOT_Signal"
+    ],
+    "ml_confidence_observed": 0.60
+  }
+}

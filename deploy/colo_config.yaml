@@ -1,0 +1,34 @@
+
+# v34 Exchange Colocation Configuration
+# Target: Equinix NY4 (New Jersey) & LD4 (London)
+
+location:
+  primary:
+    code: NY4
+    provider: Equinix
+    address: "755 Secaucus Rd, Secaucus, NJ"
+    cross_connects:
+      - exchanges: ["NASDAQ", "CBOE", "Gemini", "Coinbase_Prime"]
+      - latency_target_us: 45
+  secondary:
+    code: LD4
+    provider: Equinix
+    address: "2 Buckingham Ave, Slough"
+    cross_connects:
+      - exchanges: ["LMAX", "Bitstamp"]
+      - latency_target_us: 110
+
+hardware:
+  servers:
+    - role: "matching_engine"
+      cpu: "AMD EPYC 9374F (Frequency Optimized)"
+      ram: "256GB DDR5 ECC"
+      nic: "Solarflare X2522"
+      fpga: "Xilinx Alveo U250"
+      
+network:
+  kernel_bypass: True
+  driver: "onload"
+  multicast_subscriptions:
+    - "239.0.0.1:4000" # Market Data A
+    - "239.0.0.1:4001" # Market Data B

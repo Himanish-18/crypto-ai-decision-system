@@ -1,22 +1,28 @@
 import asyncio
 import json
 import logging
-import websockets
 import time
-from typing import Dict, List, Callable, Awaitable
 from collections import deque
+from typing import Awaitable, Callable, Dict, List
+
 import numpy as np
+import websockets
 
 logger = logging.getLogger("l2_stream")
 logging.basicConfig(level=logging.INFO)
 
+
 class L2Stream:
-    def __init__(self, symbol: str = "btcusdt", callbacks: List[Callable[[Dict], Awaitable[None]]] = None):
+    def __init__(
+        self,
+        symbol: str = "btcusdt",
+        callbacks: List[Callable[[Dict], Awaitable[None]]] = None,
+    ):
         self.symbol = symbol.lower()
         self.ws_url = f"wss://fstream.binance.com/stream?streams={self.symbol}@depth20@100ms/{self.symbol}@aggTrade"
         self.callbacks = callbacks or []
         self.order_book = {"bids": [], "asks": []}
-        self.trades = deque(maxlen=1000) # Keep last 1000 trades
+        self.trades = deque(maxlen=1000)  # Keep last 1000 trades
         self.running = False
 
     async def connect(self):
@@ -62,7 +68,9 @@ class L2Stream:
             "price": float(payload["p"]),
             "quantity": float(payload["q"]),
             "timestamp": payload["T"],
-            "is_buyer_maker": payload["m"] # True if seller is taker (Buy), False if buyer is taker (Sell) -> Wait, m=True means Maker is Buyer -> Taker is Seller -> Sell Trade
+            "is_buyer_maker": payload[
+                "m"
+            ],  # True if seller is taker (Buy), False if buyer is taker (Sell) -> Wait, m=True means Maker is Buyer -> Taker is Seller -> Sell Trade
         }
         self.trades.append(trade)
 
@@ -71,11 +79,12 @@ class L2Stream:
             "symbol": self.symbol,
             "timestamp": time.time() * 1000,
             "order_book": self.order_book,
-            "recent_trades": list(self.trades)
+            "recent_trades": list(self.trades),
         }
 
     async def stop(self):
         self.running = False
+
 
 # Example usage
 async def print_snapshot(snapshot: Dict):
@@ -83,7 +92,10 @@ async def print_snapshot(snapshot: Dict):
     if ob["bids"] and ob["asks"]:
         best_bid = ob["bids"][0][0]
         best_ask = ob["asks"][0][0]
-        logger.info(f"Bid: {best_bid} | Ask: {best_ask} | Trades: {len(snapshot['recent_trades'])}")
+        logger.info(
+            f"Bid: {best_bid} | Ask: {best_ask} | Trades: {len(snapshot['recent_trades'])}"
+        )
+
 
 if __name__ == "__main__":
     stream = L2Stream(callbacks=[print_snapshot])

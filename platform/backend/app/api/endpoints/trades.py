@@ -1,11 +1,14 @@
-from typing import List, Any
+from typing import Any, List
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
 from app.api import deps
 from app.db import models
 from app.schemas import trade as trade_schema
 
 router = APIRouter()
+
 
 @router.get("/", response_model=List[trade_schema.Trade])
 def read_trades(
@@ -17,8 +20,16 @@ def read_trades(
     """
     Retrieve trades for current user.
     """
-    trades = db.query(models.Trade).filter(models.Trade.user_id == current_user.id).order_by(models.Trade.timestamp.desc()).offset(skip).limit(limit).all()
+    trades = (
+        db.query(models.Trade)
+        .filter(models.Trade.user_id == current_user.id)
+        .order_by(models.Trade.timestamp.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return trades
+
 
 @router.post("/", response_model=trade_schema.Trade)
 def create_trade(
@@ -30,10 +41,7 @@ def create_trade(
     """
     Create new trade (Simulate execution).
     """
-    trade = models.Trade(
-        **trade_in.dict(),
-        user_id=current_user.id
-    )
+    trade = models.Trade(**trade_in.dict(), user_id=current_user.id)
     db.add(trade)
     db.commit()
     db.refresh(trade)

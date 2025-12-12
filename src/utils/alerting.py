@@ -1,12 +1,15 @@
 import logging
-import requests
 import os
 from typing import Optional
+
+import requests
+
 
 class TelegramAlertHandler(logging.Handler):
     """
     Custom Logging Handler to send critical messages to Telegram.
     """
+
     def __init__(self, token: Optional[str] = None, chat_id: Optional[str] = None):
         super().__init__()
         self.token = token or os.getenv("TELEGRAM_TOKEN")
@@ -24,11 +27,7 @@ class TelegramAlertHandler(logging.Handler):
 
     def send_message(self, text: str):
         try:
-            payload = {
-                "chat_id": self.chat_id,
-                "text": text,
-                "parse_mode": "Markdown"
-            }
+            payload = {"chat_id": self.chat_id, "text": text, "parse_mode": "Markdown"}
             requests.post(self.api_url, json=payload, timeout=5)
         except Exception as e:
             # Fallback to standard error to avoid infinite loop

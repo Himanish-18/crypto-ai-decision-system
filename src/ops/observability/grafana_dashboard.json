@@ -1,0 +1,76 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "gnetId": null,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "panels": [
+        {
+            "title": "System Uptime",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "targets": [
+                {
+                    "expr": "system_up"
+                }
+            ]
+        },
+        {
+            "title": "Portfolio Value",
+            "type": "graph",
+            "datasource": "Prometheus",
+            "targets": [
+                {
+                    "expr": "portfolio_value_usd"
+                }
+            ]
+        },
+        {
+            "title": "Model Drift (PSI)",
+            "type": "gauge",
+            "datasource": "Prometheus",
+            "targets": [
+                {
+                    "expr": "model_drift_score"
+                }
+            ],
+            "thresholds": {
+                "steps": [
+                    {
+                        "color": "green",
+                        "value": null
+                    },
+                    {
+                        "color": "yellow",
+                        "value": 0.1
+                    },
+                    {
+                        "color": "red",
+                        "value": 0.25
+                    }
+                ]
+            }
+        }
+    ],
+    "schemaVersion": 30,
+    "style": "dark",
+    "tags": [
+        "institutional",
+        "v25"
+    ],
+    "templating": {
+        "list": []
+    },
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "Institutional Core v25 Dashboard",
+    "uid": "v25_dashboard",
+    "version": 1
+}

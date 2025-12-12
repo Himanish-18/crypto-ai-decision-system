@@ -1,0 +1,366 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/soumyadebtripathy/crypto-ai-decision-system
+plugins: anyio-4.11.0, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 31 items
+
+test_alpha_upgrade.py F                                                  [  3%]
+test_plot.py .                                                           [  6%]
+test_risk_hardening.py .                                                 [  9%]
+tests/test_correlation_guard.py ..                                       [ 16%]
+tests/test_execution_v22.py ...                                          [ 25%]
+tests/test_l2_pipeline.py ..F                                            [ 35%]
+tests/test_loss_guard.py .                                               [ 38%]
+tests/test_ml_v18.py ...F                                                [ 51%]
+tests/test_portfolio_env.py FFF                                          [ 61%]
+tests/test_portfolio_risk.py ...                                         [ 70%]
+tests/test_ppo_memory.py FF                                              [ 77%]
+tests/test_regime_v21.py .                                               [ 80%]
+tests/test_sentiment_fallback.py ..                                      [ 87%]
+tests/test_v24_alpha.py ....                                             [100%]
+
+=================================== FAILURES ===================================
+______________________________ test_alpha_upgrade ______________________________
+
+    def test_alpha_upgrade():
+        print("Testing Alpha Upgrade Components...")
+    
+        # 1. Test Microstructure Features
+        print("\n[1] Testing Microstructure Features...")
+        micro = MicrostructureFeatures()
+    
+        # Mock Order Book
+        order_book = {
+            "bids": [[42000, 1.0], [41990, 2.0]],
+            "asks": [[42010, 0.5], [42020, 1.5]],
+        }
+        # Mock Trades
+        trades = pd.DataFrame(
+            {
+                "timestamp": [1, 2, 3],
+                "side": ["buy", "sell", "buy"],
+                "price": [42000, 42005, 42010],
+                "amount": [0.1, 0.2, 0.3],
+            }
+        )
+    
+        features = micro.calculate_features(order_book, trades)
+        print(f"Features: {features}")
+        assert "order_imbalance_10" in features
+        assert "cvd_1h" in features
+    
+        # 2. Test Regime Detection
+        print("\n[2] Testing Regime Detection...")
+        regime = MarketRegimeDetector(n_components=2)
+    
+        # Mock History
+        dates = pd.date_range(start="2024-01-01", periods=100, freq="H")
+        history = pd.DataFrame(
+            {
+                "timestamp": dates,
+                "close": np.random.normal(42000, 100, 100),
+                "high": np.random.normal(42100, 100, 100),
+                "low": np.random.normal(41900, 100, 100),
+            }
+        )
+    
+>       regime.fit_hmm(history)
+
+test_alpha_upgrade.py:55: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/models/regime_detection.py:38: in fit_hmm
+    self.hmm_model.fit(X)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/hmmlearn/base.py:485: in fit
+    stats, curr_logprob = self._do_estep(X, lengths)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/hmmlearn/base.py:764: in _do_estep
+    lattice, logprob, posteriors, fwdlattice, bwdlattice = impl(sub_X)
+                                                           ^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/hmmlearn/base.py:888: in _fit_log
+    posteriors = self._compute_posteriors_log(fwdlattice, bwdlattice)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/hmmlearn/base.py:519: in _compute_posteriors_log
+    log_normalize(log_gamma, axis=1)
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/hmmlearn/utils.py:54: in log_normalize
+    a_lse = special.logsumexp(a, axis, keepdims=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/scipy/special/_logsumexp.py:128: in logsumexp
+    out, sgn = _logsumexp(a, b, axis=axis, return_sign=return_sign, xp=xp)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/scipy/special/_logsumexp.py:217: in _logsumexp
+    a = xpx.at(a, i_max).set(-xp.inf, copy=True if b is None else None)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/scipy/_lib/array_api_extra/_lib/_at.py:370: in set
+    return self._op(_AtOp.SET, None, None, y, copy=copy, xp=xp)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/scipy/_lib/array_api_extra/_lib/_at.py:352: in _op
+    if is_torch_array(y):
+       ^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/scipy/_lib/array_api_compat/common/_helpers.py:171: in is_torch_array
+    return _issubclass_fast(cls, "torch", "Tensor")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cls = <class 'float'>, modname = 'torch', clsname = 'Tensor'
+
+    @lru_cache(100)
+    def _issubclass_fast(cls: type, modname: str, clsname: str) -> bool:
+        try:
+            mod = sys.modules[modname]
+        except KeyError:
+            return False
+        parent_cls = getattr(mod, clsname)
+>       return issubclass(cls, parent_cls)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       TypeError: issubclass() arg 2 must be a class, a tuple of classes, or a union
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/scipy/_lib/array_api_compat/common/_helpers.py:72: TypeError
+----------------------------- Captured stdout call -----------------------------
+Testing Alpha Upgrade Components...
+
+[1] Testing Microstructure Features...
+Features: {'order_imbalance_10': np.float64(0.2), 'order_imbalance_50': np.float64(0.2), 'cvd_1h': np.float64(0.2), 'vwap_deviation': np.float64(7.93524837329718e-05)}
+
+[2] Testing Regime Detection...
+_____________________________ test_execution_logic _____________________________
+
+    @pytest.mark.asyncio
+    async def test_execution_logic():
+        exec_engine = MicroExecution(log_file="test_log.jsonl")
+        exec_engine.log_trade = AsyncMock()
+    
+        signal = {"direction": 1, "confidence": 0.9}
+        snapshot = {
+            "symbol": "BTCUSDT",
+            "order_book": {"bids": [[100, 10]], "asks": [[100.05, 10]]},  # Tight spread
+        }
+    
+        await exec_engine.execute(signal, snapshot)
+>       exec_engine.log_trade.assert_called_once()
+
+tests/test_l2_pipeline.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4867989792'>
+
+    def assert_called_once(self):
+        """assert that the mock was called only once.
+        """
+        if not self.call_count == 1:
+            msg = ("Expected '%s' to have been called once. Called %s times.%s"
+                   % (self._mock_name or 'mock',
+                      self.call_count,
+                      self._calls_repr()))
+>           raise AssertionError(msg)
+E           AssertionError: Expected 'mock' to have been called once. Called 0 times.
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:958: AssertionError
+______________________ TestMLv18.test_uncertainty_engine _______________________
+
+self = <test_ml_v18.TestMLv18 testMethod=test_uncertainty_engine>
+
+    def test_uncertainty_engine(self):
+        print("\nTesting Uncertainty Engine (MC Dropout)...")
+        # Mock model
+        model = torch.nn.Linear(10, 1)
+        eng = UncertaintyEngine(model, n_passes=5)
+        x = torch.randn(1, 10)
+        mean, epi, ale = eng.predict_with_uncertainty(x)
+        print(f"Mean: {mean:.4f}, Epistemic: {epi:.4f}")
+        self.assertIsInstance(mean, float)
+>       self.assertGreaterEqual(epi, 0.0)
+E       AssertionError: nan not greater than or equal to 0.0
+
+tests/test_ml_v18.py:23: AssertionError
+----------------------------- Captured stdout call -----------------------------
+
+Testing Uncertainty Engine (MC Dropout)...
+Mean: nan, Epistemic: nan
+_____________________ TestPortfolioEnv.test_agent_forward ______________________
+
+self = <test_portfolio_env.TestPortfolioEnv testMethod=test_agent_forward>
+
+    def test_agent_forward(self):
+        obs = self.env.reset()
+>       action, _ = self.agent.select_action(obs)
+        ^^^^^^^^^
+E       ValueError: not enough values to unpack (expected 2, got 0)
+
+tests/test_portfolio_env.py:45: ValueError
+_______________________ TestPortfolioEnv.test_dimensions _______________________
+
+self = <test_portfolio_env.TestPortfolioEnv testMethod=test_dimensions>
+
+    def setUp(self):
+        self.assets = ["BTC", "ETH", "SOL"]
+        self.env = PortfolioEnv(
+            self.assets, initial_balance=10000, transaction_cost_bps=5.0
+        )
+>       self.agent = PPOPortfolioAgent(
+            state_dim=self.env.state_dim, action_dim=self.env.action_dim
+        )
+
+tests/test_portfolio_env.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1169: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1173: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock spec='str' id='4866501536'>, args = ()
+kwargs = {'action_dim': 4, 'state_dim': 10}
+effect = <tuple_iterator object at 0x12214e410>
+
+    def _execute_mock_call(self, /, *args, **kwargs):
+        # separate from _increment_mock_call so that awaited functions are
+        # executed separately from their call, also AsyncMock overrides this method
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+>               result = next(effect)
+                         ^^^^^^^^^^^^
+E               StopIteration
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1230: StopIteration
+_____________________ TestPortfolioEnv.test_step_mechanics _____________________
+
+self = <test_portfolio_env.TestPortfolioEnv testMethod=test_step_mechanics>
+
+    def setUp(self):
+        self.assets = ["BTC", "ETH", "SOL"]
+        self.env = PortfolioEnv(
+            self.assets, initial_balance=10000, transaction_cost_bps=5.0
+        )
+>       self.agent = PPOPortfolioAgent(
+            state_dim=self.env.state_dim, action_dim=self.env.action_dim
+        )
+
+tests/test_portfolio_env.py:15: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1169: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1173: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <MagicMock spec='str' id='4866501536'>, args = ()
+kwargs = {'action_dim': 4, 'state_dim': 10}
+effect = <tuple_iterator object at 0x12214e410>
+
+    def _execute_mock_call(self, /, *args, **kwargs):
+        # separate from _increment_mock_call so that awaited functions are
+        # executed separately from their call, also AsyncMock overrides this method
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+                raise effect
+            elif not _callable(effect):
+>               result = next(effect)
+                         ^^^^^^^^^^^^
+E               StopIteration
+
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/unittest/mock.py:1230: StopIteration
+_____________________ TestPPOMemory.test_selective_storage _____________________
+
+self = <test_ppo_memory.TestPPOMemory testMethod=test_selective_storage>
+
+    def setUp(self):
+        # Setup the mock environment for each test
+        self.torch_mock = MagicMock()
+        self.torch_mock.Tensor = MagicMock
+        self.torch_mock.tensor = lambda x, **kwargs: x # Identity for values
+        self.torch_mock.norm.return_value = 1.0
+    
+        # Apply patch
+        self.patcher = patch.dict(sys.modules, {
+            "torch": self.torch_mock,
+            "torch.nn": MagicMock(),
+            "torch.optim": MagicMock()
+        })
+        self.patcher.start()
+    
+        # Import modules inside the patched environment
+        # We need to ensure we re-import or import fresh
+>       import src.models.portfolio_rl.ppo_agent as ppo_module
+E       ImportError: cannot import name 'portfolio_rl' from 'src.models' (unknown location)
+
+tests/test_ppo_memory.py:25: ImportError
+_____________________ TestPPOMemory.test_weighted_sampling _____________________
+
+self = <test_ppo_memory.TestPPOMemory testMethod=test_weighted_sampling>
+
+    def setUp(self):
+        # Setup the mock environment for each test
+        self.torch_mock = MagicMock()
+        self.torch_mock.Tensor = MagicMock
+        self.torch_mock.tensor = lambda x, **kwargs: x # Identity for values
+        self.torch_mock.norm.return_value = 1.0
+    
+        # Apply patch
+        self.patcher = patch.dict(sys.modules, {
+            "torch": self.torch_mock,
+            "torch.nn": MagicMock(),
+            "torch.optim": MagicMock()
+        })
+        self.patcher.start()
+    
+        # Import modules inside the patched environment
+        # We need to ensure we re-import or import fresh
+>       import src.models.portfolio_rl.ppo_agent as ppo_module
+E       ImportError: cannot import name 'portfolio_rl' from 'src.models' (unknown location)
+
+tests/test_ppo_memory.py:25: ImportError
+=============================== warnings summary ===============================
+test_alpha_upgrade.py::test_alpha_upgrade
+  /Users/soumyadebtripathy/crypto-ai-decision-system/test_alpha_upgrade.py:45: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
+    dates = pd.date_range(start="2024-01-01", periods=100, freq="H")
+
+tests/test_ml_v18.py::TestMLv18::test_uncertainty_engine
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/numpy/_core/fromnumeric.py:3860: RuntimeWarning: Mean of empty slice.
+    return _methods._mean(a, axis=axis, dtype=dtype,
+
+tests/test_ml_v18.py::TestMLv18::test_uncertainty_engine
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/numpy/_core/_methods.py:144: RuntimeWarning: invalid value encountered in scalar divide
+    ret = ret.dtype.type(ret / rcount)
+
+tests/test_ml_v18.py::TestMLv18::test_uncertainty_engine
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/numpy/_core/fromnumeric.py:4268: RuntimeWarning: Degrees of freedom <= 0 for slice
+    return _methods._var(a, axis=axis, dtype=dtype, out=out, ddof=ddof,
+
+tests/test_ml_v18.py::TestMLv18::test_uncertainty_engine
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/numpy/_core/_methods.py:180: RuntimeWarning: invalid value encountered in divide
+    arrmean = um.true_divide(arrmean, div, out=arrmean,
+
+tests/test_ml_v18.py::TestMLv18::test_uncertainty_engine
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/numpy/_core/_methods.py:214: RuntimeWarning: invalid value encountered in scalar divide
+    ret = ret.dtype.type(ret / rcount)
+
+tests/test_v24_alpha.py::TestV24Alpha::test_calibration
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sklearn/calibration.py:330: FutureWarning: The `cv='prefit'` option is deprecated in 1.6 and will be removed in 1.8. You can use CalibratedClassifierCV(FrozenEstimator(estimator)) instead.
+    warnings.warn(
+
+tests/test_v24_alpha.py::TestV24Alpha::test_meta_failure
+  /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/sklearn/utils/validation.py:2749: UserWarning: X does not have valid feature names, but RandomForestClassifier was fitted with feature names
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED test_alpha_upgrade.py::test_alpha_upgrade - TypeError: issubclass() ar...
+FAILED tests/test_l2_pipeline.py::test_execution_logic - AssertionError: Expe...
+FAILED tests/test_ml_v18.py::TestMLv18::test_uncertainty_engine - AssertionEr...
+FAILED tests/test_portfolio_env.py::TestPortfolioEnv::test_agent_forward - Va...
+FAILED tests/test_portfolio_env.py::TestPortfolioEnv::test_dimensions - StopI...
+FAILED tests/test_portfolio_env.py::TestPortfolioEnv::test_step_mechanics - S...
+FAILED tests/test_ppo_memory.py::TestPPOMemory::test_selective_storage - Impo...
+FAILED tests/test_ppo_memory.py::TestPPOMemory::test_weighted_sampling - Impo...
+=================== 8 failed, 23 passed, 8 warnings in 2.26s ===================

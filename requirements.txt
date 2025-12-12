@@ -13,4 +13,16 @@ pyarrow
 hmmlearn
 seaborn
 jupyter
-ipykernelwebsockets
+ipykernel
+websockets
+
+# Dev / Compliance
+black
+flake8
+isort
+mypy
+pytest
+pytest-cov
+mlflow
+arch
+statsmodels

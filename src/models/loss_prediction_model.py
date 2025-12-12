@@ -1,11 +1,12 @@
-
-import numpy as np
-import pandas as pd
 import logging
-import joblib
 from pathlib import Path
 
+import joblib
+import numpy as np
+import pandas as pd
+
 logger = logging.getLogger("loss_guard")
+
 
 class LossPredictionModel:
     """
@@ -13,10 +14,18 @@ class LossPredictionModel:
     Used as a Veto/Safety mechanism.
     Feature Set: [ret_1h, ret_4h, vol_1h, skew, funding_flip, spread_regime]
     """
+
     def __init__(self, model_path="data/models/loss_guard.pkl"):
         self.model_path = Path(model_path)
         self.model = None
-        self.features = ["ret_1h", "ret_4h", "vol_1h", "skew", "funding_flip", "spread_regime"]
+        self.features = [
+            "ret_1h",
+            "ret_4h",
+            "vol_1h",
+            "skew",
+            "funding_flip",
+            "spread_regime",
+        ]
         self.threshold = 0.6
         self.load()
 
@@ -29,7 +38,9 @@ class LossPredictionModel:
                 logger.error(f"❌ Failed to load LossGuard Model: {e}")
                 self.model = None
         else:
-            logger.warning(f"⚠️ LossGuard Model not found at {self.model_path}. Using Dummy Mode (Always Safe).")
+            logger.warning(
+                f"⚠️ LossGuard Model not found at {self.model_path}. Using Dummy Mode (Always Safe)."
+            )
             self.model = None
 
     def predict(self, feature_dict):
@@ -56,15 +67,15 @@ class LossPredictionModel:
         """
         try:
             from sklearn.ensemble import GradientBoostingClassifier
-            
+
             # Synthetic Data
             X = pd.DataFrame(np.random.randn(100, 6), columns=self.features)
             # Make 'vol_1h' correlated with loss
-            y = (X["vol_1h"] > 1.0).astype(int) 
-            
+            y = (X["vol_1h"] > 1.0).astype(int)
+
             clf = GradientBoostingClassifier(n_estimators=50, learning_rate=0.1)
             clf.fit(X, y)
-            
+
             self.model = clf
             self.model_path.parent.mkdir(parents=True, exist_ok=True)
             joblib.dump(clf, self.model_path)

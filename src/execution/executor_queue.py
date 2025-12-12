@@ -1,11 +1,13 @@
 import logging
-import time
-import threading
 import queue
-from typing import Dict, Any, Optional
+import threading
+import time
+from typing import Any, Dict, Optional
+
 from src.execution.binance_executor import BinanceExecutor
 
 logger = logging.getLogger("executor_queue")
+
 
 class ExecutorQueue:
     def __init__(self, executor: BinanceExecutor, max_retries: int = 3):
@@ -14,7 +16,7 @@ class ExecutorQueue:
         self.order_queue = queue.Queue()
         self.is_running = False
         self.worker_thread = None
-        self.recent_errors = [] # Track recent errors
+        self.recent_errors = []  # Track recent errors
 
     def get_recent_errors(self) -> list:
         """Get and clear recent errors."""
@@ -62,21 +64,23 @@ class ExecutorQueue:
     def _execute_with_retry(self, order_params: Dict[str, Any]):
         """Execute order with retries and exponential backoff."""
         retries = 0
-        backoff = 1 # Start with 1 second
+        backoff = 1  # Start with 1 second
 
         while retries <= self.max_retries:
             try:
-                logger.info(f"⚙️ Executing Order (Attempt {retries+1}/{self.max_retries+1})...")
-                
+                logger.info(
+                    f"⚙️ Executing Order (Attempt {retries+1}/{self.max_retries+1})..."
+                )
+
                 # Call the executor
                 result = self.executor.execute_order(**order_params)
-                
+
                 if result:
                     logger.info(f"✅ Order Executed Successfully: {result}")
                     return
                 else:
-                    # If execute_order returns None (e.g. dry run or error handled internally), 
-                    # we assume it failed or was handled. 
+                    # If execute_order returns None (e.g. dry run or error handled internally),
+                    # we assume it failed or was handled.
                     # If it was a dry run, it logs and returns mock.
                     # If it was an error, execute_order usually logs it.
                     # Let's assume if it returns None/Empty it might be a failure we want to retry if it was an exception.
@@ -84,7 +88,7 @@ class ExecutorQueue:
                     # We might need to modify BinanceExecutor to raise exceptions or return status.
                     # For now, let's assume if it returns None, it failed.
                     logger.warning("⚠️ Order execution returned None.")
-                    
+
             except Exception as e:
                 logger.error(f"❌ Execution Failed: {e}")
 
@@ -93,7 +97,7 @@ class ExecutorQueue:
             if retries <= self.max_retries:
                 logger.info(f"⏳ Retrying in {backoff}s...")
                 time.sleep(backoff)
-                backoff *= 2 # Exponential backoff
+                backoff *= 2  # Exponential backoff
             else:
                 error_msg = f"Max retries reached. Order Failed: {order_params}"
                 logger.error(f"💀 {error_msg}")

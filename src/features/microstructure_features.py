@@ -1,6 +1,8 @@
+from typing import Dict, List
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List
+
 
 class MicrostructureFeatures:
     def __init__(self):
@@ -22,14 +24,18 @@ class MicrostructureFeatures:
         bid_vol = ob["bids"][0][1]
         ask_vol = ob["asks"][0][1]
         mid_price = (best_bid + best_ask) / 2
-        
+
         # 1. Microprice (Volume Weighted Mid Price)
         total_vol = bid_vol + ask_vol
-        microprice = (best_bid * ask_vol + best_ask * bid_vol) / total_vol if total_vol > 0 else mid_price
-        
+        microprice = (
+            (best_bid * ask_vol + best_ask * bid_vol) / total_vol
+            if total_vol > 0
+            else mid_price
+        )
+
         # 2. Spread
         spread = best_ask - best_bid
-        
+
         # 3. Order Flow Imbalance (OFI) - Simplified 1-level
         ofi = 0.0
         if self.prev_best_bid is not None:
@@ -37,18 +43,18 @@ class MicrostructureFeatures:
             if best_bid > self.prev_best_bid:
                 ofi += bid_vol
             elif best_bid == self.prev_best_bid:
-                ofi += (bid_vol - self.prev_bid_vol)
+                ofi += bid_vol - self.prev_bid_vol
             else:
                 ofi -= self.prev_bid_vol
-            
+
             # Ask Side
             if best_ask > self.prev_best_ask:
                 ofi += self.prev_ask_vol
             elif best_ask == self.prev_best_ask:
-                ofi -= (ask_vol - self.prev_ask_vol)
+                ofi -= ask_vol - self.prev_ask_vol
             else:
                 ofi -= ask_vol
-        
+
         # Update state
         self.prev_best_bid = best_bid
         self.prev_best_ask = best_ask
@@ -60,7 +66,7 @@ class MicrostructureFeatures:
         cvd_10s = 0.0
         volume_buy = 0.0
         volume_sell = 0.0
-        
+
         now = snapshot["timestamp"]
         for t in trades:
             # Look back 10 seconds (10000 ms)
@@ -72,8 +78,12 @@ class MicrostructureFeatures:
                 else:
                     volume_buy += t["quantity"]
                     cvd_10s += t["quantity"]
-        
-        vpin = abs(volume_buy - volume_sell) / (volume_buy + volume_sell) if (volume_buy + volume_sell) > 0 else 0
+
+        vpin = (
+            abs(volume_buy - volume_sell) / (volume_buy + volume_sell)
+            if (volume_buy + volume_sell) > 0
+            else 0
+        )
 
         return {
             "microprice": microprice,
@@ -81,5 +91,5 @@ class MicrostructureFeatures:
             "ofi": ofi,
             "cvd_10s": cvd_10s,
             "vpin": vpin,
-            "mid_price": mid_price
+            "mid_price": mid_price,
         }

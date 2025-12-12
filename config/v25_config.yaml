@@ -1,0 +1,24 @@
+
+system:
+  mode: "institutional"
+  version: "v25"
+  
+risk:
+  max_drawdown: 0.15
+  daily_loss_limit: 0.03
+  risk_per_trade: 0.005 # 0.5%
+  max_leverage: 2.0
+  
+execution:
+  exchange: "binance"
+  strategy: "TWAP"
+  urgency: "medium"
+  
+science:
+  confidence_interval: 0.95
+  min_sharpe: 1.5
+  
+ml:
+  tracking_uri: "./mlruns"
+  experiment_name: "v25_live"
+  feature_set: "v25_institutional"
