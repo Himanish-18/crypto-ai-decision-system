@@ -1,0 +1,32 @@
+src/backtesting/hf_backtester.py:137:16: F821 undefined name 'volume'
+            if volume > 0:
+               ^
+src/compliance/audit_log.py:29:51: F821 undefined name 'Dict'
+    def log_event(self, event_type: str, details: Dict):
+                                                  ^
+src/execution/quant_execution_v25.py:134:27: F821 undefined name 'side'
+            return ask if side == "BUY" else bid  # Market/Aggressive Limit
+                          ^
+src/execution/quant_execution_v25.py:137:12: F821 undefined name 'side'
+        if side == "BUY":
+           ^
+src/main_service.py:37:9: F821 undefined name 'logger'
+        logger.info("Shutdown requested")
+        ^
+src/monitor/data_drift.py:122:72: F821 undefined name 'Any'
+    def check_regime_shift(self, live_data: pd.DataFrame) -> Dict[str, Any]:
+                                                                       ^
+src/verification/stress_test_audit.py:156:38: F821 undefined name 'y'
+                "auc": roc_auc_score(y, probs),
+                                     ^
+src/verification/stress_test_audit.py:157:46: F821 undefined name 'y'
+                "precision": precision_score(y, preds, zero_division=0),
+                                             ^
+src/verification/stress_test_audit.py:158:40: F821 undefined name 'y'
+                "recall": recall_score(y, preds, zero_division=0),
+                                       ^
+src/verification/stress_test_audit.py:159:32: F821 undefined name 'y'
+                "f1": f1_score(y, preds, zero_division=0),
+                               ^
+10    F821 undefined name 'volume'
+10

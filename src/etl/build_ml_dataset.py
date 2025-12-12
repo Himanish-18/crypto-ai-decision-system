@@ -2,9 +2,8 @@ import os
 from pathlib import Path
 from typing import Tuple
 
-import pandas as pd
 import numpy as np
-
+import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
@@ -87,7 +86,9 @@ def load_price_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
 
         # Keep only timestamp + relevant cols
         keep_cols = ["timestamp"] + [c for c in df.columns if c != "timestamp"]
-        df = df[keep_cols].drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+        df = (
+            df[keep_cols].drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+        )
 
         return df
 
@@ -118,7 +119,14 @@ def load_news_sentiment() -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported news file format: {fp}")
 
-    ts_col_candidates = ["published", "publishedAt", "timestamp", "time", "datetime", "date"]
+    ts_col_candidates = [
+        "published",
+        "publishedAt",
+        "timestamp",
+        "time",
+        "datetime",
+        "date",
+    ]
     ts_col = None
     for c in ts_col_candidates:
         if c in df.columns:
@@ -209,7 +217,11 @@ def build_clean_timeseries(freq: str = "1H") -> pd.DataFrame:
     )
 
     # Forward-fill prices where reasonable (for missing candles)
-    price_cols = [c for c in merged.columns if c.endswith(("_open", "_high", "_low", "_close", "_volume"))]
+    price_cols = [
+        c
+        for c in merged.columns
+        if c.endswith(("_open", "_high", "_low", "_close", "_volume"))
+    ]
     merged[price_cols] = merged[price_cols].ffill()
 
     # Fill missing sentiment stats

@@ -1,0 +1,51 @@
+INFO:system_verify:🚀 BEGINNING INSTITUTIONAL UPGRADE VERIFICATION PIPELINE
+INFO:system_verify:🔵 Running Verification for v19_Quantum_Stacker...
+INFO:system_verify:✅ v19_Quantum_Stacker PASSED (0.63s)
+INFO:system_verify:🔵 Running Verification for v20_Risk_Engine...
+INFO:system_verify:✅ v20_Risk_Engine PASSED (0.31s)
+INFO:system_verify:🔵 Running Verification for v21_Regime_Detection...
+ERROR:system_verify:❌ v21_Regime_Detection FAILED (2.20s)
+ERROR:system_verify:INFO:regime_ensemble:HMM Trained.
+INFO:regime_ensemble:XGB Regime Model Trained.
+INFO:meta_brain_v21:🧠 v21 Regime Ensemble Loaded from data/regime_test/regime_ensemble.pkl
+INFO:meta_brain_v21:🧠 v21 Regime Risk: 0.02 ({'hmm_state': 0, 'hmm_prob': np.float64(2.368122314027955e-24), 'xgb_prob': np.float32(0.032920767)})
+INFO:meta_brain_v17:🦅 Macro Regime: NEUTRAL
+INFO:meta_brain:🧠 Meta-Brain Selects: FlowReaper | Sig: 1.0 | Conf: 0.75
+INFO:moe_router:🧠 MoE Routing: Regime=NEUTRAL -> Expert=MeanReverter -> Signal=0.0
+INFO:meta_brain_v18:🧠 v18 Insight: MoE says MeanReverter -> 0.00 (Stable & Certain)
+INFO:meta_brain_v21:🧠 v21 Regime Risk: 0.49 ({'hmm_state': 0, 'hmm_prob': np.float64(4.3760163193531996e-16), 'xgb_prob': np.float32(0.9852152)})
+INFO:meta_brain_v17:🦅 Macro Regime: NEUTRAL
+INFO:meta_brain:🧠 Meta-Brain Selects: MomentumHunter | Sig: 1.0 | Conf: 0.85
+INFO:moe_router:🧠 MoE Routing: Regime=NEUTRAL -> Expert=MeanReverter -> Signal=0.0
+INFO:meta_brain_v18:🧠 v18 Insight: MoE says MeanReverter -> 0.00 (Stable & Certain)
+F
+======================================================================
+FAIL: test_hard_veto (__main__.TestRegimeV21.test_hard_veto)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/soumyadebtripathy/crypto-ai-decision-system/tests/test_regime_v21.py", line 104, in test_hard_veto
+    self.assertEqual(decision_risk.get("veto_reason"), "REGIME_RISK")
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 'REGIME_RISK'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.108s
+
+FAILED (failures=1)
+
+INFO:system_verify:🔵 Running Verification for v22_Execution_Logic...
+INFO:system_verify:✅ v22_Execution_Logic PASSED (0.07s)
+INFO:system_verify:🔵 Running Verification for v23_Portfolio_RL_Unit...
+INFO:system_verify:✅ v23_Portfolio_RL_Unit PASSED (1.22s)
+INFO:system_verify:🔵 Running Verification for v23_Portfolio_RL_Backtest...
+INFO:system_verify:✅ v23_Portfolio_RL_Backtest PASSED (1.03s)
+INFO:system_verify:
+📊 CONSOLIDATED REPORT CARD 📊
+✅ v19_Quantum_Stacker: PASS (0.63s)
+✅ v20_Risk_Engine: PASS (0.31s)
+❌ v21_Regime_Detection: FAIL (2.20s)
+✅ v22_Execution_Logic: PASS (0.07s)
+✅ v23_Portfolio_RL_Unit: PASS (1.22s)
+✅ v23_Portfolio_RL_Backtest: PASS (1.03s)
+
+⚠️ DEPLOYMENT BLOCKED. FAILURES DETECTED.

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
 from app.api.websockets import manager
 
 router = APIRouter()
+
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

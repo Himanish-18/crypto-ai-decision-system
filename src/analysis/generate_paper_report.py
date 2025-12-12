@@ -1,8 +1,9 @@
-import pandas as pd
 import json
-import matplotlib.pyplot as plt
-from pathlib import Path
 import logging
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -15,12 +16,13 @@ LOG_FILE = DATA_DIR / "execution" / "paper_trades.jsonl"
 REPORT_FILE = PROJECT_ROOT / "paper_trading_report.md"
 EQUITY_CURVE_FILE = PROJECT_ROOT / "equity_curve.png"
 
+
 def load_logs():
     """Load logs from JSONL."""
     if not LOG_FILE.exists():
         logger.error(f"Log file not found: {LOG_FILE}")
         return pd.DataFrame()
-        
+
     data = []
     with open(LOG_FILE, "r") as f:
         for line in f:
@@ -28,12 +30,13 @@ def load_logs():
                 data.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-                
+
     df = pd.DataFrame(data)
     if not df.empty:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
         df = df.sort_values("timestamp")
     return df
+
 
 def generate_report(df):
     """Generate markdown report and equity curve."""
@@ -45,21 +48,21 @@ def generate_report(df):
     total_cycles = len(df)
     trades = df[df["action"] != "HOLD"]
     total_trades = len(trades)
-    
+
     start_equity = df["equity"].iloc[0]
     end_equity = df["equity"].iloc[-1]
     total_return = (end_equity - start_equity) / start_equity * 100
-    
+
     max_equity = df["equity"].cummax()
     drawdown = (df["equity"] - max_equity) / max_equity
     max_drawdown = drawdown.min() * 100
-    
+
     regime_counts = df["regime"].value_counts().to_dict()
-    
+
     # Guardian Stats
     locks = df["is_locked"].sum()
     max_losing_streak = df["losing_streak"].max()
-    
+
     # Generate Markdown
     report = f"""# Paper Trading Execution Report
 
@@ -104,6 +107,7 @@ def generate_report(df):
     plt.legend()
     plt.savefig(EQUITY_CURVE_FILE)
     logger.info(f"✅ Equity curve saved to {EQUITY_CURVE_FILE}")
+
 
 if __name__ == "__main__":
     df = load_logs()

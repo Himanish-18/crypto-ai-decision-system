@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # Simulated Core System
+  crypto-brain:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      - ENV=TEST
+      - LOG_LEVEL=DEBUG
+    depends_on:
+      - redis-mock
+
+  # Infrastructure Mocks
+  redis-mock:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  # Observability Mocks
+  prometheus-mock:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"

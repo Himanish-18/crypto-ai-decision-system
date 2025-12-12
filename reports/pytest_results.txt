@@ -1,0 +1,45 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/soumyadebtripathy/crypto-ai-decision-system
+plugins: anyio-4.11.0
+collected 28 items / 3 errors
+
+==================================== ERRORS ====================================
+____________________ ERROR collecting test_alpha_upgrade.py ____________________
+ImportError while importing test module '/Users/soumyadebtripathy/crypto-ai-decision-system/test_alpha_upgrade.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test_alpha_upgrade.py:8: in <module>
+    from src.models.ensemble_model import EnsembleModel
+src/models/ensemble_model.py:4: in <module>
+    import lightgbm as lgb
+E   ModuleNotFoundError: No module named 'lightgbm'
+________________________ ERROR collecting test_plot.py _________________________
+ImportError while importing test module '/Users/soumyadebtripathy/crypto-ai-decision-system/test_plot.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+test_plot.py:4: in <module>
+    import seaborn as sns
+E   ModuleNotFoundError: No module named 'seaborn'
+__________________ ERROR collecting tests/test_l2_pipeline.py __________________
+ImportError while importing test module '/Users/soumyadebtripathy/crypto-ai-decision-system/tests/test_l2_pipeline.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_l2_pipeline.py:6: in <module>
+    from src.execution.micro_execution import MicroExecution
+E   ModuleNotFoundError: No module named 'src.execution.micro_execution'
+=========================== short test summary info ============================
+ERROR test_alpha_upgrade.py
+ERROR test_plot.py
+ERROR tests/test_l2_pipeline.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 3 errors during collection !!!!!!!!!!!!!!!!!!!!
+============================== 3 errors in 4.61s ===============================

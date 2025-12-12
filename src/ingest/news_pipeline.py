@@ -3,7 +3,7 @@ Optimized & Commented Institutional News Ingestion Pipeline
 Sources:
  - CryptoPanic (API)
  - RSS crypto feeds (Google News / Cointelegraph / Coindesk)
- 
+
 Removed:
  - Pushshift (permanently shut down → always 403 errors)
 
@@ -15,25 +15,27 @@ Adds:
  - Optimized loops & sessions
 """
 
-import os
-import time
 import json
 import logging
-from typing import List, Optional, Dict, Any
+import os
+import time
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-import requests
-import pandas as pd
 import feedparser
+import pandas as pd
+import requests
+from textblob import TextBlob
 from tqdm import tqdm
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-from textblob import TextBlob
 
 # ---------------------------
 # Logging Setup
 # ---------------------------
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s"
+)
 log = logging.getLogger("news_pipeline")
 
 # ---------------------------
@@ -41,6 +43,7 @@ log = logging.getLogger("news_pipeline")
 # ---------------------------
 CHECKPOINT_DIR = ".checkpoints_news"
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
 
 def save_checkpoint(name: str, data: Any):
     """Save progress to resume later (safe for long jobs)."""
@@ -51,6 +54,7 @@ def save_checkpoint(name: str, data: Any):
     except Exception as e:
         log.error(f"Failed to save checkpoint {name}: {e}")
 
+
 def load_checkpoint(name: str) -> Optional[Any]:
     """Load previous progress if exists."""
     fp = f"{CHECKPOINT_DIR}/{name}.json"
@@ -59,6 +63,7 @@ def load_checkpoint(name: str) -> Optional[Any]:
         with open(fp) as f:
             return json.load(f)
     return None
+
 
 # ---------------------------
 # Helpers
@@ -77,12 +82,14 @@ def normalize_date(dt: Any) -> Optional[datetime]:
         except Exception:
             return None
 
+
 def domain(url: str) -> str:
     """Extract domain name from a URL."""
     try:
         return urlparse(url).netloc or "unknown"
     except:
         return "unknown"
+
 
 # ---------------------------
 # Credibility Scoring
@@ -96,6 +103,7 @@ TRUST_SOURCES = {
     "decrypt.co": 0.9,
 }
 
+
 def apply_vectorized_credibility(df: pd.DataFrame) -> pd.Series:
     """Vectorized credibility score (fast)."""
     log.info("Applying credibility scores...")
@@ -103,7 +111,7 @@ def apply_vectorized_credibility(df: pd.DataFrame) -> pd.Series:
     credibility = pd.Series(0.5, index=df.index)
 
     # Trusted domains boost score
-    credibility += (df["domain"].map(TRUST_SOURCES).fillna(0.5) - 0.5)
+    credibility += df["domain"].map(TRUST_SOURCES).fillna(0.5) - 0.5
 
     # Text length signals
     text_len = (df["title"].fillna("") + " " + df["text"].fillna("")).str.len()
@@ -112,10 +120,12 @@ def apply_vectorized_credibility(df: pd.DataFrame) -> pd.Series:
 
     return credibility.clip(0, 1)
 
+
 # ---------------------------
 # Sentiment
 # ---------------------------
 vader = SentimentIntensityAnalyzer()
+
 
 def sentiment(text: str):
     """Compute sentiment using VADER + TextBlob."""
@@ -128,6 +138,7 @@ def sentiment(text: str):
         return v, float(t.polarity), float(t.subjectivity)
     except:
         return 0.0, 0.0, 0.0
+
 
 # ---------------------------
 # CryptoPanic Fetcher
@@ -169,20 +180,23 @@ def fetch_cryptopanic(session, api_key, max_items=50000):
                 break
 
             for it in results:
-                items.append({
-                    "title": it.get("title", ""),
-                    "text": it.get("body", ""),
-                    "timestamp": normalize_date(it.get("published_at")),
-                    "url": it.get("url", ""),
-                    "domain": domain(it.get("url", "")),
-                    "source": "cryptopanic",
-                    "origin": "cryptopanic"
-                })
+                items.append(
+                    {
+                        "title": it.get("title", ""),
+                        "text": it.get("body", ""),
+                        "timestamp": normalize_date(it.get("published_at")),
+                        "url": it.get("url", ""),
+                        "domain": domain(it.get("url", "")),
+                        "source": "cryptopanic",
+                        "origin": "cryptopanic",
+                    }
+                )
 
             bar.update(len(results))
             page += 1
 
     return items
+
 
 # ---------------------------
 # RSS Fetcher (Main Free Source)
@@ -198,20 +212,23 @@ def fetch_rss(session, feeds, limit=1000):
             f = feedparser.parse(r.content)
 
             for ent in f.entries[:limit]:
-                articles.append({
-                    "title": ent.get("title", ""),
-                    "text": ent.get("summary", ent.get("description", "")),
-                    "timestamp": normalize_date(ent.get("published")),
-                    "url": ent.get("link", ""),
-                    "domain": domain(ent.get("link", "")),
-                    "source": f.feed.get("title", "rss"),
-                    "origin": "rss",
-                })
+                articles.append(
+                    {
+                        "title": ent.get("title", ""),
+                        "text": ent.get("summary", ent.get("description", "")),
+                        "timestamp": normalize_date(ent.get("published")),
+                        "url": ent.get("link", ""),
+                        "domain": domain(ent.get("link", "")),
+                        "source": f.feed.get("title", "rss"),
+                        "origin": "rss",
+                    }
+                )
 
         except Exception as e:
             log.error(f"RSS error ({feed}): {e}")
 
     return articles
+
 
 # ---------------------------
 # Main Pipeline
@@ -220,7 +237,7 @@ def run_pipeline(
     cryptopanic_key=None,
     rss_feeds=None,
     max_items=200000,
-    out_file="data/raw/news_combined.parquet"
+    out_file="data/raw/news_combined.parquet",
 ):
     rss_feeds = rss_feeds or [
         "https://news.google.com/rss/search?q=bitcoin&hl=en-US&gl=US&ceid=US:en",
@@ -234,7 +251,9 @@ def run_pipeline(
         session.headers.update({"User-Agent": "NewsPipeline/1.0"})
 
         # Fetch CryptoPanic (optional)
-        cp = load_checkpoint("cryptopanic") or fetch_cryptopanic(session, cryptopanic_key, max_items)
+        cp = load_checkpoint("cryptopanic") or fetch_cryptopanic(
+            session, cryptopanic_key, max_items
+        )
         save_checkpoint("cryptopanic", cp)
 
         # Fetch RSS (main free data source)
@@ -275,8 +294,17 @@ def run_pipeline(
     df["credibility"] = apply_vectorized_credibility(df)
 
     final_cols = [
-        "timestamp", "title", "text", "url", "domain", "source", "origin",
-        "vader_compound", "textblob_polarity", "textblob_subjectivity", "credibility"
+        "timestamp",
+        "title",
+        "text",
+        "url",
+        "domain",
+        "source",
+        "origin",
+        "vader_compound",
+        "textblob_polarity",
+        "textblob_subjectivity",
+        "credibility",
     ]
 
     df = df[final_cols]
@@ -300,5 +328,5 @@ if __name__ == "__main__":
     run_pipeline(
         cryptopanic_key=api_key,
         max_items=150000,
-        out_file="data/raw/news_combined.parquet"
+        out_file="data/raw/news_combined.parquet",
     )

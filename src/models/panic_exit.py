@@ -1,6 +1,8 @@
+from typing import Any, Dict
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Any
+
 
 class PanicExitModel:
     """
@@ -10,6 +12,7 @@ class PanicExitModel:
       B: Orderflow (Volume Burst & Imbalance)
       C: Sentiment (Proxies)
     """
+
     def __init__(self, sensitivity: float = 1.0):
         self.sensitivity = sensitivity
 
@@ -25,28 +28,39 @@ class PanicExitModel:
             }
         """
         if len(df) < 30:
-            return {"panic_score": 0.0, "exit_signal": False, "heads": {}, "reason": "Insufficient Data"}
-            
+            return {
+                "panic_score": 0.0,
+                "exit_signal": False,
+                "heads": {},
+                "reason": "Insufficient Data",
+            }
+
         latest = df.iloc[-1]
-        
+
         # Dynamic Column Detection Helper
         def get_col(candidates):
             for c in candidates:
-                if c in df.columns: return c
+                if c in df.columns:
+                    return c
             return None
 
         high_col = get_col(["high", "btc_high"])
         low_col = get_col(["low", "btc_low"])
         close_col = get_col(["close", "btc_close"])
         vol_col = get_col(["volume", "btc_volume"])
-        
+
         if not all([high_col, low_col, close_col, vol_col]):
-             return {"panic_score": 0.0, "exit_signal": False, "heads": {}, "reason": "Missing Columns"}
-        
+            return {
+                "panic_score": 0.0,
+                "exit_signal": False,
+                "heads": {},
+                "reason": "Missing Columns",
+            }
+
         # --- Head A: Microstructure (Spread Spike) ---
         # Logic: Sudden expansion in High-Low Range relative to ATR
         # Feature: Range / ATR
-        
+
         # Calculate ATR if missing
         if "atr" in df.columns:
             atr = df["atr"].iloc[-1]
@@ -54,86 +68,91 @@ class PanicExitModel:
             # Simple ATR 14
             # Use detected cols
             tr = np.maximum(
-                df[high_col] - df[low_col], 
-                np.abs(df[high_col] - df[close_col].shift(1)), 
-                np.abs(df[low_col] - df[close_col].shift(1))
+                df[high_col] - df[low_col],
+                np.abs(df[high_col] - df[close_col].shift(1)),
+                np.abs(df[low_col] - df[close_col].shift(1)),
             )
             atr = tr.rolling(14).mean().iloc[-1]
-            
-        if atr == 0: atr = 1.0
-        
+
+        if atr == 0:
+            atr = 1.0
+
         current_range = latest[high_col] - latest[low_col]
         spread_ratio = current_range / atr
-        
-        # Activation: Sigmoid-like logic. 
+
+        # Activation: Sigmoid-like logic.
         # If range is > 3x ATR -> High Panic likelihood
         score_micro = np.clip((spread_ratio - 1.5) / 3.0, 0, 1)
-        
+
         # --- Head B: Orderflow (Volume Burst & Imbalance) ---
         # Logic: Volume Spike (> 3x Avg) + Price Drop
-        
+
         vol_avg = df[vol_col].rolling(20).mean().iloc[-1]
-        if vol_avg == 0: vol_avg = 1.0
-        
+        if vol_avg == 0:
+            vol_avg = 1.0
+
         vol_ratio = latest[vol_col] / vol_avg
-        
+
         # Imbalance: Close near Low (Bearish) or High (Bullish Panic Buy?)
         # User defined "Panic Exit" usually implies Crash/Dump protection for Longs.
         # But could be Short Squeeze too.
         # Let's focus on Volatility/Instability.
-        
+
         score_flow = np.clip((vol_ratio - 2.0) / 4.0, 0, 1)
-        
+
         # Check Directionality for "Imbalance"
         # If huge volume but small body -> Indecision (Not necessarily panic exit, maybe reversal).
         # If huge volume + huge body -> Breakout/Crash.
-        
+
         # --- Head C: Sentiment (Proxies) ---
         # Uses 'feat_fear_proxy' and 'feat_panic_proxy' calculated in SentimentFeatures
         # Or calculates on fly if missing.
-        
+
         score_sent = 0.0
         if "feat_fear_proxy" in df.columns:
             # Fear Proxy is Z-Score. > 2.0 or < -2.0 is extreme.
             fear_z = abs(latest["feat_fear_proxy"])
             score_sent = np.clip((fear_z - 2.0) / 2.0, 0, 1)
-            
+
         if "feat_panic_proxy" in df.columns:
-             # Additive impact
-             score_sent = max(score_sent, float(latest["feat_panic_proxy"]))
-             
+            # Additive impact
+            score_sent = max(score_sent, float(latest["feat_panic_proxy"]))
+
         # --- Fusion ---
         # Weighted Max Pooling?
         # A Panic Spike in ANY head is dangerous.
         # Let's use a soft-maxish approach or weighted average.
-        
+
         # Weights: Microstructure (Fastest) > Orderflow > Sentiment (Lagging)
         weighted_score = (score_micro * 0.4) + (score_flow * 0.4) + (score_sent * 0.2)
-        
+
         # Boost if multiple heads fire
         if (score_micro > 0.5) and (score_flow > 0.5):
             weighted_score = min(weighted_score * 1.5, 1.0)
-            
+
         # Sensitivity Adjustment
         final_score = np.clip(weighted_score * self.sensitivity, 0, 1)
-        
+
         # Decision
         exit_signal = final_score > 0.65
-        
+
         heads = {
             "micro": float(score_micro),
             "flow": float(score_flow),
-            "sentiment": float(score_sent)
+            "sentiment": float(score_sent),
         }
-        
+
         reason = []
-        if score_micro > 0.6: reason.append(f"Spread Spike ({spread_ratio:.1f}x ATR)")
-        if score_flow > 0.6: reason.append(f"Vol Burst ({vol_ratio:.1f}x Avg)")
-        if score_sent > 0.6: reason.append("Extreme Sentiment")
-        
+        if score_micro > 0.6:
+            reason.append(f"Spread Spike ({spread_ratio:.1f}x ATR)")
+        if score_flow > 0.6:
+            reason.append(f"Vol Burst ({vol_ratio:.1f}x Avg)")
+        if score_sent > 0.6:
+            reason.append("Extreme Sentiment")
+
         return {
             "panic_score": float(final_score),
             "exit_signal": bool(exit_signal),
             "heads": heads,
-            "reason": ", ".join(reason) if reason else "Normal"
+            "reason": ", ".join(reason) if reason else "Normal",
         }

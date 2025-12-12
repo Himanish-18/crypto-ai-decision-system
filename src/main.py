@@ -68,13 +68,13 @@ try:
         GLOBAL_CONFIG = yaml.safe_load(f)
 except Exception as e:
     logger.warning(f"Config Load Failed: {e}")
-ml_model = None
+# DOT Model Init (v45)
 dot_model = None
-# Fix: Init DOT Model
 try:
-    from src.features.orderflow import OrderFlowFeatures
-    dot_model = OrderFlowFeatures()
-    logger.info("🧠 DOT Model Initialized.")
+    from src.ml.transformers.orderflow_transformer import OrderflowTransformer
+    dot_model = OrderflowTransformer()
+    dot_model.eval()
+    logger.info("🧠 DOT Model Initialized (Transformer).")
 except Exception as e:
     logger.warning(f"DOT Init Failed: {e}")
 TRAINING_FEATURES = []
@@ -231,7 +231,7 @@ TRAINING_FEATURES = []
 
 def job():
     global LAST_PRED_SCORE, LAST_PRED_PRICE, LAST_PRED_DIR, EMA_RET
-    logger.info("⏰ Starting v19 QUANTUM Intelligence Cycle...")
+    logger.info("⏰ Starting v46 Stability Kernel Cycle...")
 
     try:
         # 1. System Self-Check
@@ -239,7 +239,7 @@ def job():
 
         # 2. Autonomous Market Switching
         focus_ticker = market_router_v2.scan_markets({})
-        logger.info(f"🔭 QUANTUM Auto-Focus: {focus_ticker}")
+        logger.info(f"🔭 Auto-Focus: {focus_ticker}")
 
         # 3. Data Fetch
         pair = focus_ticker
@@ -251,51 +251,46 @@ def job():
             logger.warning(f"No Data for {focus_ticker}")
             return
 
+        # Ensure Columns
         if "close" in df.columns:
             current_price = df["close"].iloc[-1]
         else:
             close_col = [c for c in df.columns if "close" in c][0]
             current_price = df[close_col].iloc[-1]
-            df["close"] = df[close_col]
-            if "open" not in df.columns:
-                df["open"] = df[[c for c in df.columns if "open" in c][0]]
-            if "high" not in df.columns:
-                df["high"] = df[[c for c in df.columns if "high" in c][0]]
-            if "low" not in df.columns:
-                df["low"] = df[[c for c in df.columns if "low" in c][0]]
-            if "volume" not in df.columns:
-                df["volume"] = df[[c for c in df.columns if "volume" in c][0]]
-
+            df["close"] = df[close_col] # Alias standard
+            
         # Log Feature Count
         logger.info(f"Feature Count: {df.shape[1]}")
-        
-        if False: # Force Run: ML will fail gracefully if features mismatch
-            logger.error(f"❌ Feature Matrix Too Small ({df.shape[1]}) — ML Disabled")
-            return
 
         # Prepare for feature gen
         symbol_prefix = focus_ticker.lower()
         if symbol_prefix not in ["btc", "eth"]:
-             symbol_prefix = "btc" # Default fallback for library compatibility
+             symbol_prefix = "btc" 
 
-        df[f"{symbol_prefix}_open"] = df["open"]
-        df[f"{symbol_prefix}_high"] = df["high"]
-        df[f"{symbol_prefix}_low"] = df["low"]
-        df[f"{symbol_prefix}_close"] = df["close"]
-        df[f"{symbol_prefix}_volume"] = df["volume"]
+        # Alias for library
+        for col in ["open", "high", "low", "close", "volume"]:
+            if col in df.columns:
+                df[f"{symbol_prefix}_{col}"] = df[col]
         
         # Calculate Features
         df = calculate_features(df)
+        
+        # Derived Metrics
+        last_close = df[f"{symbol_prefix}_close"].iloc[-1]
+        atr_14 = df[f"{symbol_prefix}_atr_14"].iloc[-1]
+        vol_percent = atr_14 / last_close if last_close > 0 else 0.01
 
-        # 4. Noise Immunity Check
+        # 4. Noise Immunity Check (v46)
         noise_score = noise_guard.analyze_cleanliness(df)
-        if noise_score > 0.85:
-            logger.warning(
-                f"🌪 Market Choppy (Score {noise_score:.2f}). QUANTUM Blocking Trades."
-            )
-            LAST_PRED_DIR = "Blocked"
-            LAST_PRED_SCORE = None # Prevent stale validation
-            return
+        is_blocked = False
+        
+        # v46 Logic: If noise > 0.65 -> Block Trade, Record as Blocked_Noise
+        if noise_score > 0.65:
+            logger.warning(f"🌪 Market Noise {noise_score:.2f} > 0.65. TRADING BLOCKED.")
+            is_blocked = True
+            LAST_PRED_DIR = "Blocked_Noise"
+            LAST_PRED_SCORE = 0.0
+            # Continue data flow for logging, but block execution
 
         # 5. QUANTUM Intelligence Layer
         market_payload = {
@@ -303,29 +298,23 @@ def job():
             "candles": df,
             "microstructure": ob_manager.get_latest_metrics(),
             "funding_rate": 0.0001,
-            "volatility": 0.02,
+            "volatility": vol_percent,
         }
 
-        # v40 Step 2: Fixed Labeling Logic (Hard Thresholds)
-        last_close = df["btc_close"].iloc[-1]
+        # Market State (Fixed Threshold 0.05%) - Still used for internal state?
+        # User requested Arbitrator uses Volatility Weights, not Regime.
+        # But we still pass "regime" to arbitrate method (though v46 Arbitrator ignores it or uses it as desc).
+        
         ret1 = (df["btc_close"].iloc[-1] - df["btc_close"].iloc[-2]) / df["btc_close"].iloc[-2]
-        
-        threshold = 0.0005 # Fixed Microstructure Threshold
-        
+        threshold = 0.0005 
         market_state = "FLAT"
-        if ret1 > threshold:
-            market_state = "UP"
-        elif ret1 < -threshold:
-            market_state = "DOWN"
+        if ret1 > threshold: market_state = "UP"
+        elif ret1 < -threshold: market_state = "DOWN"
 
-        # A. Meta-Brain (Relaxed Veto)
-        # v40 Step 7: Only veto on extreme crashes
+        # A. Meta-Brain
         macro_decision = meta_brain.think(market_payload)
-        if macro_decision["action"] == "HOLD" and macro_decision.get("reason") == "CRASH_PROTECTION":
-             logger.warning(f"🛡️ CRASH VETO: {macro_decision['reason']}")
-             return
-
-        # B. Agent Arbitrator
+        
+        # B. Agent Signals
         last_row = df.iloc[-1]
         
         # 1. MomentumHunter
@@ -342,77 +331,104 @@ def job():
         if price < bb_low: mr_sig = 1.0 
         elif price > bb_high: mr_sig = -1.0 
 
-        # 3. VolOracle
-        # Stub
+        # 3. VolOracle (Stub)
+        vol_sig = 0.0
         
-        # 4. ML Ensemble (v40 Real Features)
+        # 4. ML Ensemble (v46)
         ml_sig = 0.0
         ml_conf = 0.0
         disable_ml = GLOBAL_CONFIG.get("deployment", {}).get("feature_flags", {}).get("disable_ml", False)
-        if not disable_ml and ml_model and TRAINING_FEATURES:
+        
+        if not disable_ml and ml_model and len(TRAINING_FEATURES) > 0:
             try:
-                # Align features: Select columns, fillna, reshape
-                # Note: df has btc_ prefixes now. TRAINING_FEATURES likely has btc_ prefixes too (from parquet header check)
+                # Select features
                 row_feats = df.iloc[-1][TRAINING_FEATURES].fillna(0)
                 lx = row_feats.values.reshape(1, -1)
                 
+                # Predict
                 probs = ml_model.predict_proba(lx)[0]
                 p_up = probs[1]
                 
-                # Standard Logic
-                if p_up > 0.60:
+                # v46 Thresholds
+                if p_up > 0.55:
                      ml_sig = 1.0
-                     ml_conf = (p_up - 0.5) * 2
-                elif p_up < 0.40:
+                elif p_up < 0.45:
                      ml_sig = -1.0
-                     ml_conf = (0.5 - p_up) * 2
+                else:
+                     ml_sig = 0.0 # Strict Neutral
+                
+                ml_conf = abs(p_up - 0.5) * 2
+                logger.info(f"🧠 ML: p_up={p_up:.4f} -> Sig={ml_sig} Conf={ml_conf:.2f}")
+
             except Exception as e:
                 logger.error(f"ML Error: {e}")
 
-        # 5. DOT Model (120 seq, btc columns)
+        # 5. DOT Model (v46)
         dot_sig = 0.0
         dot_conf = 0.0
-        try:
-             # v40 Step 5: Sequence construction
-             seq_df = df[['btc_close','btc_volume','orderflow_delta']].tail(120)
-             if len(seq_df) == 120:
-                 # Normalize (Z-score logic inline or assume transformer handles it?)
-                 # DOT usually expects normalized input or raw. Assuming raw for now as transformer is black box here.
-                 # Better: Simple Lookback Normalization
-                 # seq = (seq - mean) / std ?
-                 # User prompt didn't specify normalization, just "Construct input".
-                 seq = seq_df.values
-                 seq = torch.tensor(seq, dtype=torch.float32).unsqueeze(0)
+        disable_dot = GLOBAL_CONFIG.get("deployment", {}).get("feature_flags", {}).get("disable_dot", False)
+        if not disable_dot and dot_model:
+            try:
+                 # Construct Tensor [1, 120, 3] -> [Close, Vol, OrderFlow]
+                 seq_cols = ['btc_close', 'btc_volume', 'orderflow_delta']
+                 seq_df = df[seq_cols].tail(120)
                  
-                 dot_out, _ = dot_model(seq)
-                 p_dot = dot_out.item()
+                 # v46 Padding Logic
+                 if len(seq_df) < 120:
+                     pad_len = 120 - len(seq_df)
+                     if len(seq_df) > 0:
+                         last_row_seq = seq_df.iloc[[-1]]
+                         padding = pd.concat([last_row_seq] * pad_len)
+                         seq_df = pd.concat([padding, seq_df], axis=0)
+                     else:
+                         # Emergency Zero Pad if DF empty (shouldn't happen due to check above)
+                         seq_df = pd.DataFrame(np.zeros((120, 3)), columns=seq_cols)
+
+                 # Normalize (Z-Score per seq)
+                 seq_np = seq_df.values
+                 mean = seq_np.mean(axis=0)
+                 std = seq_np.std(axis=0) + 1e-9
+                 seq_norm = (seq_np - mean) / std
                  
-                 raw_conf = abs(p_dot - 0.5) * 2
-                 if raw_conf > 0.10: # Min conf
-                     if p_dot > 0.60:
-                         dot_sig = 1.0
-                         dot_conf = raw_conf
-                     elif p_dot < 0.40:
-                         dot_sig = -1.0
-                         dot_conf = raw_conf
-        except Exception as e:
-            logger.error(f"DOT Error: {e}")
+                 seq_tensor = torch.tensor(seq_norm, dtype=torch.float32).unsqueeze(0)
+                 
+                 with torch.no_grad():
+                     dot_out, _ = dot_model(seq_tensor)
+                     p_dot = dot_out.item()
+                 
+                 # v46 Thresholds
+                 if p_dot > 0.55:
+                     dot_sig = 1.0
+                 elif p_dot < 0.45:
+                     dot_sig = -1.0
+                 else:
+                     dot_sig = 0.0
+                     
+                 dot_conf = abs(p_dot - 0.5) * 2
+                 logger.info(f"🧠 DOT: p_dot={p_dot:.4f} -> Sig={dot_sig} Conf={dot_conf:.2f}")
+            except Exception as e:
+                logger.error(f"DOT Error: {e}")
 
         # Construct Signals
         raw_signals = {
             "MomentumHunter": {"signal": mom_sig, "confidence": 0.8},
             "MeanRevGhost": {"signal": mr_sig, "confidence": 0.8},
-            "VolOracle": {"signal": 0.0, "confidence": 0.5},
+            "VolOracle": {"signal": vol_sig, "confidence": 0.5},
             "ML_Ensemble": {"signal": ml_sig, "confidence": ml_conf},
             "DOT_Signal": {"signal": dot_sig, "confidence": dot_conf},
+            # Pass Metrics to Arbitrator
+            "MarketMetrics": {
+                "volatility": vol_percent,
+                "atr_14": atr_14
+            },
             "MarketState": market_state,
         }
         
-        # v40 Step 9: Logging
         logger.info(f"RAW SIGNALS → {raw_signals}")
         
         regime = market_state if market_state != "FLAT" else "NEUTRAL"
         
+        # Arbitrate
         arbitrated_decision = arbitrator.arbitrate(raw_signals, regime)
         logger.info(f"ARBITRATED → {arbitrated_decision}")
 
@@ -422,29 +438,37 @@ def job():
                  logger.warning("🛑 RISK VETO")
                  return
 
-        if arbitrated_decision["action"] != "HOLD":
+        if arbitrated_decision["action"] != "HOLD" and not is_blocked:
             execution_quantum.execute_order(arbitrated_decision, market_payload)
 
-        # v40 Step 11: Final Decision Mapping
-        action = arbitrated_decision.get("action", "HOLD")
-        score = arbitrated_decision.get("size", 0.0)
-        
-        if action == "BUY":
-            LAST_PRED_DIR = "Bullish"
-        elif action == "SELL":
-            LAST_PRED_DIR = "Bearish"
-        else:
-            LAST_PRED_DIR = "Neutral"
+        # v46 Direction Mapping (Strict Assignment)
+        # Note: If is_blocked, LAST_PRED_DIR is already "Blocked_Noise" (set earlier)
+        # We only override if NOT blocked.
+        if not is_blocked:
+            action = arbitrated_decision.get("action", "HOLD")
+            decision_size = arbitrated_decision.get("size", 0.0)
             
-        LAST_PRED_SCORE = score
+            if action == "BUY":
+                LAST_PRED_DIR = "Bullish"
+                LAST_PRED_SCORE = 0.5 + (0.5 * decision_size) # v46: 0.50 + 0.50*size
+            elif action == "SELL":
+                LAST_PRED_DIR = "Bearish"
+                LAST_PRED_SCORE = 0.5 - (0.5 * decision_size) # v46: 0.50 - 0.50*size
+            else:
+                LAST_PRED_DIR = "Neutral"
+                LAST_PRED_SCORE = 0.5
 
-        # v40 Step 3: Validation Logic (Strict)
+        # v46 Validation Logic (Adaptive ATR)
         # 5-bar Lookahead
+        # Use ATR * 0.2
+        adaptive_thresh = atr_14 * 0.2
+        adaptive_thresh_pct = adaptive_thresh / last_close # For return comparison
+        
         current_pred = {
             "label": LAST_PRED_DIR,
             "score": LAST_PRED_SCORE,
             "price": current_price,
-            "threshold": threshold 
+            "threshold": adaptive_thresh_pct
         }
         PRED_QUEUE.append(current_pred)
         
@@ -452,29 +476,36 @@ def job():
             old_pred = PRED_QUEUE[0]
             start_price = old_pred["price"]
             pred_label = old_pred["label"]
+            cached_thresh = old_pred["threshold"]
             
             future_ret = (current_price - start_price) / start_price
             
-            # EMA Smoothing (v43 request kept)
+            # EMA Smoothing
             alpha = 0.5
             if EMA_RET is None: EMA_RET = future_ret
             else: EMA_RET = alpha * future_ret + (1 - alpha) * EMA_RET
             
             eval_ret = EMA_RET
-            logger.info(f"RET SINCE LAST → {eval_ret:.6f}") # v40 Step 9
+            logger.info(f"RET SINCE LAST ({pred_label}) → {eval_ret:.6f} [Thresh {cached_thresh:.6f}]") 
             
-            # Determine True Label (Strict)
+            # True Label (v46 Adaptive)
             true_label = "Flat"
-            if eval_ret > 0.0005: true_label = "Up"
-            elif eval_ret < -0.0005: true_label = "Down"
+            if eval_ret > cached_thresh: true_label = "Up"
+            elif eval_ret < -cached_thresh: true_label = "Down"
             
-            # Strict Correctness
+            # Correctness Check
             is_correct = False
-            if pred_label == "Bullish" and true_label == "Up": is_correct = True
-            elif pred_label == "Bearish" and true_label == "Down": is_correct = True
-            elif pred_label == "Neutral" and true_label == "Flat": is_correct = True
+            # If Blocked_Noise, we don't count correctness? Or treat as Neutral?
+            # User: "Never treat blocked cycles as Neutral predictions." -> Just log them.
+            if pred_label == "Blocked_Noise":
+                 pass # No strict correctness for Blocked
+            else:
+                if pred_label == "Bullish" and true_label == "Up": is_correct = True
+                elif pred_label == "Bearish" and true_label == "Down": is_correct = True
+                elif pred_label == "Neutral" and true_label == "Flat": is_correct = True
             
             res_str = "CORRECT" if is_correct else "WRONG"
+            if pred_label == "Blocked_Noise": res_str = "BLOCKED"
             
             acc_logger.info(
                 f"{pred_label},{old_pred['score']:.4f},{true_label},{eval_ret:.6f},{res_str}"
@@ -482,6 +513,7 @@ def job():
 
         LAST_PRED_PRICE = current_price
         logger.info("💤 Cycle Complete.")
+ # v45 End
 
 
     except Exception as e:
